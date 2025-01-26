@@ -1,0 +1,319 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  color: #333;
+  background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 1.2s ease-in-out;
+}
+
+#app-container {
+  display: flex;
+  width: 90%;
+  height: 90%;
+  border-radius: 15px;
+  overflow-y: scroll;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.sidebar {
+  width: 280px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+  color: #ecf0f1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 3px 0 20px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease-in-out;
+}
+
+.sidebar h2 {
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.days-list {
+  list-style-type: none;
+  margin-top: 30px;
+}
+
+.day-item {
+  padding: 15px;
+  margin-bottom: 15px;
+  background: linear-gradient(135deg, #5c6b78 0%, #2c3e50 100%);
+  border-radius: 10px;
+  cursor: pointer;
+  color: #ecf0f1;
+  transition: background 0.4s ease, transform 0.3s ease, box-shadow 0.3s ease;
+  animation: slideIn 0.8s ease-out;
+}
+
+.day-item.active {
+  background: linear-gradient(135deg, #1abc9c, #16a085);
+  transform: scale(1.08);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.day-item:hover {
+  background: linear-gradient(135deg, #16a085, #1abc9c);
+  transform: scale(1.05);
+}
+
+.main-content {
+  flex: 1;
+  padding: 30px;
+  background: #ffffff;
+  border-radius: 15px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+#current-day {
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #2c3e50;
+  text-shadow: 1px 1px 5px rgba(0, 0, 0, 0.2);
+  animation: fadeInDown 1.2s ease;
+}
+
+.tasks-container {
+  display: flex;
+  align-items: center;
+}
+
+#task-title-input{
+  height: 30px;
+  width: 40%;
+  padding: 8px;
+  margin-bottom: 5px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.4s ease, box-shadow 0.3s ease;
+}
+
+#task-title-input:focus{
+  border-color: #1abc9c;
+  box-shadow: 0 0 10px rgba(26, 188, 156, 0.3);
+}
+#task-input {
+  width: 80%;
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.4s ease, box-shadow 0.3s ease;
+}
+
+#task-input:focus {
+  border-color: #1abc9c;
+  box-shadow: 0 0 10px rgba(26, 188, 156, 0.3);
+}
+
+
+#add-task-btn {
+  padding: 12px 25px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1abc9c, #16a085);
+  color: white;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: bold;
+  transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+#add-task-btn:hover {
+  background: linear-gradient(135deg, #16a085, #1abc9c);
+  transform: scale(1.08);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+#add-task-btn:active {
+  transform: scale(1);
+}
+
+.task-section {
+  margin-top: 30px;
+  width: 85%;
+}
+
+h3 {
+  margin-top: 20px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.task-list {
+  list-style-type: none;
+  padding: 0;
+  margin-top: 20px;
+  width: 100%;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  background: linear-gradient(135deg, #ffffff, #f7f7f6);
+  margin-bottom: 15px;
+  border-radius: 10px;
+  font-size: 1rem;
+  color: #2c3e50;
+  transition: background 0.4s ease, transform 0.3s ease;
+}
+
+.task-item:hover {
+  background: linear-gradient(135deg, #f9cf98, #ffd194);
+  transform: scale(1.05);
+}
+
+.task-item.completed {
+  background: #eafaf1;
+}
+
+.task-content {
+  display: flex;
+  align-items: center;
+}
+
+.task-title {
+  font-weight: bold;
+  margin-right: 5px;
+}
+
+.task-description {
+  margin-left: 5px;
+}
+
+.completed-text {
+  font-style: italic;
+}
+
+.delete-btn {
+  margin-left: auto;
+  padding: 8px 15px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: white;
+  font-weight: bold;
+  transition: transform 0.2s ease, background 0.3s ease;
+}
+
+.delete-btn:hover {
+  transform: scale(1.1);
+  background: linear-gradient(135deg, #c0392b, #e74c3c);
+} 
+
+.edit-btn, .save-edit-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  font-size: 14px;
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  font-weight: bold;
+  cursor: pointer;
+  background-color: #f39c12;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  transition: transform 0.2s ease, background 0.3s ease;
+}
+
+.edit-input {
+  font-size: 14px;
+  padding: 5px;
+  margin-left: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: calc(100% - 100px);
+  display: inline-block;
+  transition: transform 0.2s ease, background 0.3s ease;
+}
+
+.edit-btn:hover{
+  transform: scale(1.1);
+  background: linear-gradient(135deg, #ea760a, #f2a643);
+}
+
+.week-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+#prev-week-btn, #next-week-btn {
+  background: #1abc9c;
+  border: none;
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: background 0.3s ease;
+}
+
+#prev-week-btn:hover, #next-week-btn:hover {
+  background: #16a085;
+}
+
+#week-label {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #ecf0f1;
+}
+
+/* Animations for the daily planner */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
