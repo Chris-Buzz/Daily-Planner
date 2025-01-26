@@ -21,7 +21,7 @@ A simple and elegant daily planner application built using **JavaScript**, **HTM
 ### View the App
 
 The app is publicly hosted using **GitHub Pages**.  
-You can access it here: [Daily Planner App](https://chris-buzz.github.io/daily-planner-app/)
+You can access it here: [Daily Planner App](https://chris-buzz.github.io/Daily-Planner/)
 
 ### Clone the Repository
 
