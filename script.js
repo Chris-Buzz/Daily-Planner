@@ -214,7 +214,7 @@ function addTask() { // Function to add task to the task list
     selectedTime = '';
     renderTasks(currentDay.textContent);
     saveTasksToLocalStorage();
-  } else { //If a user tries to enter a task with no deacription a alert pops up 
+  } else { //If a user tries to enter a task with no description an alert pops up 
     alert('Please enter a description for the task.');
   }
 }
@@ -233,17 +233,25 @@ function resetWeeklyTasks() {
 
   // Check if today is Monday and last reset wasn't today
   if (isMonday && lastResetDate !== today.toDateString()) {
-    Object.keys(tasks).forEach(day => {
-      tasks[day] = [];
-    
-    });
-    
-    // Save reset tasks and update last reset date
+    // Calculate the date range for the last week
+    const lastWeekTasks = {};
+    const lastWeekStart = new Date(today);
+    lastWeekStart.setDate(today.getDate() - 7); // Last Monday
+    const lastWeekEnd = new Date(today);
+    lastWeekEnd.setDate(today.getDate() - 1); // Last Sunday
+
+    // Loop through the last week's days
+    for (let d = new Date(lastWeekStart); d <= lastWeekEnd; d.setDate(d.getDate() + 1)) {
+      const formattedDate = d.toDateString(); // Use the date string as the key
+      if (tasks[formattedDate]) {
+        tasks[formattedDate] = []; // Clear tasks for that day
+      }
+    }
+
+    // Save updated tasks and update last reset date
     saveTasksToLocalStorage();
     localStorage.setItem('lastResetDate', today.toDateString());
-    alert('Weekly tasks have been reset!');
-    
-    // Optionally re-render tasks for the current day
+    alert('Last week\'s tasks have been reset!');
     renderTasks(currentDay.textContent);
   }
 }
