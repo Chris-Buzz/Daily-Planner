@@ -198,7 +198,7 @@ function addTask() { // Function to add task to the task list
 
   if (taskDescription !== '') {//Make sure that there is a task description 
     const newTask = {
-      title: taskTitle !== '' ? taskTitle : 'Untitled Task',
+      title: taskTitle !== '' ? taskTitle : '',
       description: taskDescription,
       completed: false,
       timestamp: userTime
