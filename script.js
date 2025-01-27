@@ -130,7 +130,7 @@ function createTaskElement(task, index, day) { // Function to create a task elem
     saveTasksToLocalStorage();
   });
 
-  //Creating and added content for each task 
+  //Creating and added content for each task
   const taskContent = document.createElement('div');
   taskContent.classList.add('task-content');
 
