@@ -62,7 +62,7 @@ Contributions are welcome!
 ## Future Improvements
 
 - Allow users to add colors to certain tasks to color coordinate tasks that are under the same category.
-- Change where the title input of a task is either in the same place of the enter task container or as a popup modal.
+- Change where the title input of a task is. Either in the same place of the enter task container or as a popup modal.
 
 ---
 
