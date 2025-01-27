@@ -1,13 +1,17 @@
 # Daily Planner App
 
-A simple and elegant daily planner application built using **JavaScript**, **HTML**, and **CSS**. The app allows users to organize their daily tasks, manage their schedules, and stay productive. It is designed to be user-friendly and works seamlessly in any modern web browser.
+A simple and elegant daily planner application built using **JavaScript**, **HTML**, and **CSS**. The app allows users to organize their daily tasks, manage their schedules, and stay productive. It is designed to be user-friendly and works in any modern web browser.
+
+## Reason Behind Building the App
+
+I frequently found myself never sticking to a constant daily schedule. I also found that modern calender apps like google calender were too advanced for my needs. I just needed a simple weekly daily planner that I could use to list my tasks and check them off when I completed them. That's why I built this very simple, easy to use daily planner application. No extra buttons or utilities that you won't end up using. Just a simple app that keeps track of your tasks. 
 
 ## Features
 
 - **Add Tasks**: Quickly add tasks with a single click.
 - **Edit and Delete Tasks**: Update or remove tasks as needed.
 - **Time Tracking**: Organize tasks based on time blocks.
-- **Responsive Design**: Optimized for desktops, tablets, and mobile devices.
+- **Responsive Design**: Optimized for desktops, tablets, and even mobile devices.
 - **Local Storage Support**: Your tasks are saved locally in the browser, so you won't lose your data when you refresh the page.
 
 ## Technologies Used
@@ -46,28 +50,19 @@ To run the app locally, follow these steps:
 
 ## Contributing
 
-Contributions are welcome! If you’d like to contribute:
-
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix:
-   ```bash
-   git checkout -b feature-name
-   ```
-3. Commit your changes:
-   ```bash
-   git commit -m "Add feature-name"
-   ```
-4. Push to your forked repository:
-   ```bash
-   git push origin feature-name
-   ```
-5. Submit a pull request with your changes.
+Contributions are welcome!
 
 
 ## Acknowledgments
 
-- Inspired by the need to manage daily tasks effectively.
+- Inspired by the need to manage my own persoanl daily tasks effectively.  
 - Thanks to the open-source community for helpful tools and resources.
+- This project taught me a lot in css styling and JavaScript Scripting.
+
+## Future Improvements
+
+- Allow users to add colors to certain tasks to color coordinate tasks that are under the same category.
+- Change where the title input of a task is either in the same place of the enter task container or as a popup modal.
 
 ---
 
