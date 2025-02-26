@@ -11,6 +11,7 @@
 <body>
   <div id="app-container">
     <div class="sidebar">
+      <button id="toggle-sidebar">☰</button>
       <h2>Days</h2>
       <div class="week-navigation">
         <button id="prev-week-btn">&larr;</button>
@@ -18,20 +19,20 @@
         <button id="next-week-btn">&rarr;</button>
       </div>
       <ul class="days-list">
-        <li class="day-item active">Monday</li>
-        <li class="day-item">Tuesday</li>
-        <li class="day-item">Wednesday</li>
-        <li class="day-item">Thursday</li>
-        <li class="day-item">Friday</li>
-        <li class="day-item">Saturday</li>
-        <li class="day-item">Sunday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Sunday</li>
+        <li class="day-item active" ondrop="drop(event)" ondragover="allowDrop(event)">Monday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Tuesday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Wednesday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Thursday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Friday</li>
+        <li class="day-item" ondrop="drop(event)" ondragover="allowDrop(event)">Saturday</li>
       </ul>
     </div>
 
     <div class="main-content">
       <h2 id="current-day">Monday</h2>
       <div id="task-container">
-        <input id="task-title-input" type="text" placeholder="Enter task title                              Optional">
+        <input id="task-title-input" type="text" placeholder="Enter task title (Optional)">
         <input type="text" id="task-input" placeholder="Enter your task">
         <input type="time" id="clock-btn" class="time-input">
       </div>
