@@ -262,19 +262,45 @@
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="task-day">Day</label>
-                        <select id="task-day" name="day" required>
-                            <option value="Monday">Monday</option>
-                            <option value="Tuesday">Tuesday</option>
-                            <option value="Wednesday">Wednesday</option>
-                            <option value="Thursday">Thursday</option>
-                            <option value="Friday">Friday</option>
-                            <option value="Saturday">Saturday</option>
-                            <option value="Sunday">Sunday</option>
-                        </select>
+                <div class="form-group">
+                    <label>Select Days</label>
+                    <div class="days-selector">
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Sunday">
+                            <span>Sun</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Monday" checked>
+                            <span>Mon</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Tuesday">
+                            <span>Tue</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Wednesday">
+                            <span>Wed</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Thursday">
+                            <span>Thu</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Friday">
+                            <span>Fri</span>
+                        </label>
+                        <label class="day-checkbox">
+                            <input type="checkbox" name="days" value="Saturday">
+                            <span>Sat</span>
+                        </label>
                     </div>
+                    <button type="button" class="secondary-btn select-all-days-btn" id="select-all-days" style="margin-top: 12px; max-width: 200px;">
+                        <svg viewBox="0 0 24 24" width="16" height="16" style="margin-right: 6px;">
+                            <polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                        All Days
+                    </button>
+                    <small class="form-help">Select one or more days for this task</small>
                 </div>
                 
                 <div class="form-group">
