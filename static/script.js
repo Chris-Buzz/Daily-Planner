@@ -4275,10 +4275,14 @@ const assistant = {
     const weekKey = utils.getWeekKey(state.currentDay);
     const dayTasks = state.tasks[weekKey] || [];
     
+    // Get current day name
+    const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const actualToday = dayNames[today.getDay()];
+    
     // Get weather information with better forecasting
     let weatherInfo = null;
     if (weather.lastWeatherData) {
-      const isToday = state.currentDay === ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][today.getDay()];
+      const isToday = state.currentDay === actualToday;
       
       if (isToday && weather.lastWeatherData.current) {
         // Current day weather
@@ -4344,6 +4348,9 @@ const assistant = {
     return {
       currentDay: state.currentDay,
       currentDate: today.toDateString(),
+      currentTime: today.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }), // e.g., "10:49 AM"
+      currentHour: today.getHours(), // 0-23
+      actualToday: actualToday, // The actual current day name
       weekOffset: state.weekOffset,
       tasksToday: dayTasks.length,
       completedToday: dayTasks.filter(task => task.completed).length,

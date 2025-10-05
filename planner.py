@@ -2899,6 +2899,20 @@ def planning_assistant():
         tasks_today = context.get('tasksToday', 0)
         completed_today = context.get('completedToday', 0)
         
+        # Get user's local time from context (sent from frontend)
+        user_current_time = context.get('currentTime', None)
+        user_current_hour = context.get('currentHour', None)
+        user_actual_today = context.get('actualToday', None)
+        user_current_date = context.get('currentDate', None)
+        
+        # Fallback to server time if not provided (shouldn't happen with updated frontend)
+        from datetime import datetime
+        now = datetime.now()
+        actual_today = user_actual_today if user_actual_today else now.strftime('%A')
+        current_date = user_current_date if user_current_date else now.strftime('%B %d, %Y')
+        current_time = user_current_time if user_current_time else now.strftime('%I:%M %p')
+        current_hour = user_current_hour if user_current_hour is not None else now.hour
+        
         print(f"💬 User message: {user_message}")
         print(f"📅 Context: {context}")
         if conversation_history:
@@ -2951,22 +2965,15 @@ Weather Status: No weather data currently available
             for msg in conversation_history[-6:]:  # Show last 6 messages for context
                 sender = "User" if msg['sender'] == 'user' else "Assistant"
                 conversation_context += f"- {sender}: {msg['message'][:100]}{'...' if len(msg['message']) > 100 else ''}\n"
-
-        # Get actual current day and time for week offset calculations
-        from datetime import datetime
-        now = datetime.now()
-        actual_today = now.strftime('%A')  # Sunday, Monday, etc.
-        current_date = now.strftime('%B %d, %Y')  # December 25, 2024
-        current_time = now.strftime('%I:%M %p')  # 02:30 PM
-        current_hour = now.hour  # 14 (for 2 PM)
         
         # Create context-aware prompt
         system_prompt = f"""You are a helpful daily planning assistant that can both provide advice AND create comprehensive tasks directly in the user's planner. You can also MANAGE EXISTING TASKS by editing, deleting, or completing them.
 
-CURRENT DATE AND TIME:
+CURRENT DATE AND TIME (USER'S LOCAL TIME):
 - Current Date: {current_date}
 - Current Time: {current_time} ({current_hour}:00 in 24-hour format)
 - Current Day: {actual_today}
+- User is viewing: {current_day} (week offset: {current_week_offset})
 - IMPORTANT: DO NOT schedule tasks in the past! All task times must be AFTER {current_time}.
 - If user asks "what time is it?" or "current time", respond with: "It's currently {current_time} on {current_date}"
 
@@ -2976,6 +2983,49 @@ SCHEDULING RULES:
 - If it's early morning (before 9 AM), you can schedule throughout the day
 - Always check if requested time has already passed before creating a task
 - Example: If it's 3:00 PM now, don't create tasks starting at 2:00 PM or earlier today
+
+DAY CALCULATION RULES (CRITICAL):
+The week starts on SUNDAY. Days in order: Sunday → Monday → Tuesday → Wednesday → Thursday → Friday → Saturday
+
+DETERMINING WEEK OFFSET:
+1. If today is {actual_today} and user requests a day:
+   - Check if the requested day has ALREADY PASSED this week
+   - Days are in order: Sunday(0) → Monday(1) → Tuesday(2) → Wednesday(3) → Thursday(4) → Friday(5) → Saturday(6)
+   
+2. Examples when today is SUNDAY:
+   - User says "Monday": weekOffset = 0 (tomorrow, this week)
+   - User says "Tuesday": weekOffset = 0 (this week)
+   - User says "Saturday": weekOffset = 0 (this week)
+   - User says "Sunday": Could mean today OR next Sunday - ask for clarification or assume next week (weekOffset = 1)
+
+3. Examples when today is WEDNESDAY:
+   - User says "Thursday": weekOffset = 0 (tomorrow, this week)
+   - User says "Friday": weekOffset = 0 (this week)
+   - User says "Monday": weekOffset = 1 (next week - Monday already passed)
+   - User says "Tuesday": weekOffset = 1 (next week - Tuesday already passed)
+   - User says "Sunday": weekOffset = 1 (next week - Sunday already passed)
+
+4. Examples when today is SATURDAY:
+   - User says "Sunday": weekOffset = 0 (tomorrow)
+   - User says "Monday": weekOffset = 1 (next week)
+   - User says "Tuesday": weekOffset = 1 (next week)
+   - User says "Saturday": Could mean today OR next Saturday - ask for clarification or assume next week (weekOffset = 1)
+
+5. Special cases:
+   - "tomorrow": Calculate which day tomorrow is, use weekOffset = 0 unless tomorrow is Sunday (then weekOffset = 1)
+   - "next week": ALWAYS use weekOffset = 1 regardless of day
+   - "this week": ALWAYS use weekOffset = 0 regardless of day
+   - "tonight" or "this evening": Use today ({actual_today}), weekOffset = 0, time after current hour
+
+NFL/SPORTS SCHEDULING:
+- NFL games are typically:
+  * Sunday: 1:00 PM ET (early), 4:00 PM ET (late), 8:20 PM ET (Sunday Night Football)
+  * Monday: 8:15 PM ET (Monday Night Football)
+  * Thursday: 8:15 PM ET (Thursday Night Football)
+- When user mentions "NFL Sunday night" or similar:
+  * Use EVENING times (8:00 PM - 11:00 PM) NOT morning times
+  * Sunday Night Football starts around 8:20 PM
+  * Create tasks like "Watch Sunday Night Football" from 20:00-23:00 (8:00 PM - 11:00 PM)
 
 RESPONSE STYLE:
 - Keep responses SHORT and SIMPLE (1-2 sentences maximum when just chatting)
@@ -3087,17 +3137,18 @@ TASK CREATION RULES:
    - weekOffset: 2 = Week after next (14 days ahead)
    
    SMART WEEK OFFSET CALCULATION:
-   - If today is Sunday and user says "Monday": Use weekOffset: 1 (upcoming Monday in next week)
-   - If today is Monday and user says "Tuesday": Use weekOffset: 0 (Tuesday this week) 
-   - If today is Friday and user says "Monday": Use weekOffset: 1 (Monday next week)
-   - If today is Wednesday and user says "Monday": Use weekOffset: 1 (Monday next week)
-   - General rule: If the requested day has already passed this week, use weekOffset: 1
-   - Week starts on Sunday, so: Sunday→Monday→Tuesday→Wednesday→Thursday→Friday→Saturday
+   - Today is {actual_today}
+   - Week order: Sunday(0) → Monday(1) → Tuesday(2) → Wednesday(3) → Thursday(4) → Friday(5) → Saturday(6)
+   - If user requests a day that already passed this week → use weekOffset: 1 (next week)
+   - If user requests a day that hasn't happened yet this week → use weekOffset: 0 (this week)
+   - User viewing {current_day} with weekOffset {current_week_offset}
    
    EXPLICIT USER REQUESTS:
    - "next week": always use weekOffset: 1
    - "this week": always use weekOffset: 0
    - "couple weeks ahead": mix of weekOffset: 1 and weekOffset: 2
+   - "tomorrow": Calculate which day tomorrow is, then determine correct weekOffset
+   - "tonight"/"this evening": Use {actual_today} with weekOffset: 0
 
 WEATHER-AWARE PLANNING:
 - ALWAYS check weather context when suggesting outdoor activities
