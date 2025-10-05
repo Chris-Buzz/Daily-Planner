@@ -1389,26 +1389,54 @@ const tasks = {
       await utils.makeApiCall(`/api/tasks/${taskId}`, 'PUT', updates);
       console.log('✅ Task updated in Firebase successfully');
       
-      // Update in local storage as backup after successful Firebase update
+      // Find the task in local storage and update it
+      let taskFound = false;
+      let oldWeekKey = null;
+      let taskIndex = -1;
+      
+      // Find which week the task is currently in
       for (const weekKey in state.tasks) {
-        const taskIndex = state.tasks[weekKey].findIndex(t => t.id === taskId);
+        taskIndex = state.tasks[weekKey].findIndex(t => t.id === taskId);
         if (taskIndex !== -1) {
-          const oldTask = state.tasks[weekKey][taskIndex];
-          const updatedTask = {
-            ...oldTask,
-            ...updates,
-            updatedAt: new Date().toISOString()
-          };
-          state.tasks[weekKey][taskIndex] = updatedTask;
-          utils.saveToLocalStorage();
-          console.log('✅ Task updated in local storage backup');
-          
-          // Update notifications for the task
-          if (state.userSettings.notifications_enabled) {
-            notificationScheduler.onTaskUpdated(updatedTask);
-          }
-          
+          oldWeekKey = weekKey;
+          taskFound = true;
           break;
+        }
+      }
+      
+      if (taskFound) {
+        const oldTask = state.tasks[oldWeekKey][taskIndex];
+        const updatedTask = {
+          ...oldTask,
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Check if the day changed - if so, move to correct week
+        if (updates.day && updates.day !== oldTask.day) {
+          const newWeekKey = utils.getWeekKey(updates.day);
+          
+          // Remove from old week
+          state.tasks[oldWeekKey].splice(taskIndex, 1);
+          
+          // Add to new week
+          if (!state.tasks[newWeekKey]) {
+            state.tasks[newWeekKey] = [];
+          }
+          state.tasks[newWeekKey].push(updatedTask);
+          
+          console.log(`✅ Task moved from ${oldWeekKey} to ${newWeekKey}`);
+        } else {
+          // Day didn't change, just update in place
+          state.tasks[oldWeekKey][taskIndex] = updatedTask;
+        }
+        
+        utils.saveToLocalStorage();
+        console.log('✅ Task updated in local storage backup');
+        
+        // Update notifications for the task
+        if (state.userSettings.notifications_enabled) {
+          notificationScheduler.onTaskUpdated(updatedTask);
         }
       }
       
