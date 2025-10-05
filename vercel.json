@@ -1,5 +1,4 @@
 {
-  "version": 2,
   "builds": [
     {
       "src": "planner.py",
@@ -17,10 +16,5 @@
   ],
   "env": {
     "FLASK_ENV": "production"
-  },
-  "functions": {
-    "planner.py": {
-      "maxDuration": 30
-    }
   }
 }
