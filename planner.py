@@ -21,13 +21,12 @@ import csv
 import re
 import google.generativeai as genai
 import logging
-# Configure logging for production readiness
+# Configure logging for production readiness (Vercel-compatible)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('planner.log'),
-        logging.StreamHandler()
+        logging.StreamHandler()  # Only stream handler for Vercel (read-only filesystem)
     ]
 )
 logger = logging.getLogger(__name__)
