@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planno - Your Daily Planning Assistant</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='PlannerIcon.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='PlannerIcon.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.12/css/weather-icons.min.css">
+    <link rel="stylesheet" href="static/styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loader" id="loader">
+        <div class="loader-ring"></div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle Sidebar">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <div class="logo">Planno</div>
+                <div class="sidebar-actions">
+                    <button class="icon-btn" id="calendar-btn" title="Open Calendar">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/>
+                            <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/>
+                            <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="week-nav">
+                <button class="week-nav-btn" id="prev-week" title="Previous Week">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                </button>
+                <span class="week-label" id="week-label">This Week</span>
+                <button class="week-nav-btn" id="next-week" title="Next Week">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                </button>
+            </div>
+
+            <ul class="days-list" id="days-list">
+                <li class="day-item active" data-day="Sunday">
+                    <div class="day-info">
+                        <span class="day-name">Sunday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Sunday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Monday">
+                    <div class="day-info">
+                        <span class="day-name">Monday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Monday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Tuesday">
+                    <div class="day-info">
+                        <span class="day-name">Tuesday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Tuesday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Wednesday">
+                    <div class="day-info">
+                        <span class="day-name">Wednesday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Wednesday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Thursday">
+                    <div class="day-info">
+                        <span class="day-name">Thursday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Thursday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Friday">
+                    <div class="day-info">
+                        <span class="day-name">Friday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Friday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+                <li class="day-item" data-day="Saturday">
+                    <div class="day-info">
+                        <span class="day-name">Saturday</span>
+                        <span class="task-count">0 tasks</span>
+                    </div>
+                    <div class="day-weather" data-day="Saturday">
+                        <i class="wi wi-day-sunny weather-icon"></i>
+                        <span class="weather-temp">--°</span>
+                    </div>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="content-header">
+                <div class="date-display">
+                    <h1 class="current-day" id="current-day">Monday</h1>
+                    <p class="current-date" id="current-date"></p>
+                </div>
+                <div class="header-actions">
+                    <button class="icon-btn weather-btn" id="weather-btn" title="Check Weather">
+                        <div class="weather-display">
+                            <i class="wi wi-day-sunny" id="weather-icon"></i>
+                            <span class="weather-temp" id="weather-temp">--°</span>
+                        </div>
+                    </button>
+                    <button class="primary-btn" id="add-task-btn">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/>
+                            <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        Add Task
+                    </button>
+                    <button class="secondary-btn" id="delete-all-today-btn" title="Delete all tasks for today">
+                        <svg viewBox="0 0 24 24" width="18" height="18">
+                            <polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" stroke-width="2"/>
+                            <line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        Delete All Today
+                    </button>
+                    <button class="icon-btn" id="settings-btn" title="Notification Settings">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+
+                    <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
+                        <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20">
+                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2"/>
+                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2"/>
+                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2"/>
+                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <svg class="moon-icon" viewBox="0 0 24 24" width="20" height="20">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="tasks-container">
+                <section class="task-section">
+                    <div class="section-header">
+                        <h3>Today's Tasks</h3>
+                        <span class="task-badge" id="active-count">0</span>
+                    </div>
+                    <ul class="task-list" id="task-list">
+                        <!-- Tasks will be rendered here -->
+                    </ul>
+                </section>
+
+                <section class="task-section">
+                    <div class="section-header">
+                        <h3>Completed</h3>
+                        <span class="task-badge completed" id="completed-count">0</span>
+                        <button class="text-btn" id="clear-completed">Clear All</button>
+                    </div>
+                    <ul class="task-list" id="completed-list">
+                        <!-- Completed tasks will be rendered here -->
+                    </ul>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Floating Action Buttons -->
+    <div class="fab-container">
+        <button class="fab-assistant" id="fab-assistant" title="Planning Assistant">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+        </button>
+        
+        <button class="fab-add" id="fab-add" title="Add Task">
+            <svg viewBox="0 0 24 24" width="24" height="24">
+                <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/>
+                <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="modal" id="task-modal" aria-hidden="true">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Task</h2>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <form class="modal-form" id="task-form">
+                <div class="form-group">
+                    <label for="task-title">Task Title</label>
+                    <input type="text" id="task-title" name="title" placeholder="What needs to be done?" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="task-description">Description</label>
+                    <textarea id="task-description" name="description" placeholder="Add more details..."></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="task-start-time">Start Time (Optional)</label>
+                        <input type="time" id="task-start-time" name="startTime">
+                    </div>
+                    <div class="form-group">
+                        <label for="task-end-time">End Time *</label>
+                        <input type="time" id="task-end-time" name="endTime" required>
+                        <small class="form-help">If only end time is provided, task will be 1 hour long</small>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="task-day">Day</label>
+                        <select id="task-day" name="day" required>
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="task-priority">Priority</label>
+                    <select id="task-priority" name="priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Color</label>
+                    <div class="color-picker">
+                        <input type="radio" id="color-none" name="color" value="" checked>
+                        <label class="color-option" for="color-none" data-color="none"></label>
+                        
+                        <input type="radio" id="color-blue" name="color" value="#4285F4">
+                        <label class="color-option color-blue" for="color-blue"></label>
+                        
+                        <input type="radio" id="color-red" name="color" value="#EA4335">
+                        <label class="color-option color-red" for="color-red"></label>
+                        
+                        <input type="radio" id="color-yellow" name="color" value="#FBBC05">
+                        <label class="color-option color-yellow" for="color-yellow"></label>
+                        
+                        <input type="radio" id="color-green" name="color" value="#34A853">
+                        <label class="color-option color-green" for="color-green"></label>
+                        
+                        <input type="radio" id="color-purple" name="color" value="#8E24AA">
+                        <label class="color-option color-purple" for="color-purple"></label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="secondary-btn modal-cancel">Cancel</button>
+                    <button type="submit" class="primary-btn">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Calendar Modal -->
+    <div class="modal calendar-modal" id="calendar-modal" aria-hidden="true">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="calendar-controls">
+                <h2 class="calendar-month" id="calendar-month">Week View</h2>
+                <div class="calendar-nav">
+                    <button class="secondary-btn" id="calendar-prev">
+                        <svg viewBox="0 0 24 24" width="16" height="16">
+                            <polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                        Previous
+                    </button>
+                    <button class="secondary-btn" id="calendar-next">
+                        Next
+                        <svg viewBox="0 0 24 24" width="16" height="16">
+                            <polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="calendar-container">
+                <div class="calendar-grid-container">
+                    <div class="calendar-grid" id="calendar-grid">
+                        <!-- Calendar will be rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Professional Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content settings-modal-content">
+            <div class="settings-header">
+                <div class="header-info">
+                    <div class="header-icon">
+                        <svg viewBox="0 0 24 24" width="28" height="28">
+                            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <div class="header-text">
+                        <h2>Settings</h2>
+                        <p>Customize your notification preferences</p>
+                    </div>
+                </div>
+                <button class="close-btn" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Settings Tab Navigation -->
+            <div class="settings-tabs">
+                <button class="settings-tab-btn active" data-tab="notifications">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                    <span>Notifications</span>
+                </button>
+                <button class="settings-tab-btn" data-tab="classes">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/>
+                        <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/>
+                        <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
+                        <rect x="7" y="14" width="3" height="3" rx="0.5" stroke="currentColor" stroke-width="1" fill="currentColor"/>
+                    </svg>
+                    <span>Class Schedule</span>
+                </button>
+            </div>
+            
+            <div class="settings-body">
+                <!-- Notifications Tab Content -->
+                <div class="settings-tab-content active" id="notifications-tab">
+                    <!-- Notification Toggle Section -->
+                    <div class="notification-toggle-section">
+                        <div class="toggle-card">
+                            <div class="toggle-main">
+                                <div class="toggle-info">
+                                    <div class="toggle-icon">🔔</div>
+                                    <div class="toggle-details">
+                                        <h3>Smart Notifications</h3>
+                                        <p>Get reminded about your tasks and daily progress</p>
+                                    </div>
+                                </div>
+                                <label class="master-toggle" title="Enable or disable notifications">
+                                    <input type="checkbox" id="notifications-enabled" aria-label="Enable notifications" />
+                                    <span class="toggle-track">
+                                        <span class="toggle-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="status-bar" id="notification-status">
+                                <div class="status-indicator">
+                                    <span class="status-dot"></span>
+                                    <span class="status-text">Notifications disabled</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Content -->
+                    <div class="settings-content hidden" id="settings-content">
+                    
+                    <!-- Contact Information -->
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h4>� Contact Information</h4>
+                            <p>Choose how you'd like to receive notifications</p>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="notification-email">Email Address</label>
+                            <div class="input-field">
+                                <span class="input-icon">📧</span>
+                                <input type="email" id="notification-email" placeholder="your.email@example.com" />
+                                <span class="field-status" id="email-status"></span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="phone-number">Phone Number</label>
+                            <div class="input-field">
+                                <span class="input-icon">📱</span>
+                                <input type="tel" id="phone-number" placeholder="+1 (555) 123-4567" />
+                                <span class="field-status" id="phone-status"></span>
+                            </div>
+                            <p class="field-hint">Include country code for SMS notifications</p>
+                        </div>
+                    </div>
+
+                    <!-- Notification Methods -->
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h4>📬 Delivery Methods</h4>
+                            <p>Select how you want to receive notifications (you can choose multiple)</p>
+                        </div>
+                        
+                        <div class="method-grid">
+                            <label class="method-option">
+                                <input type="checkbox" name="notification-methods" value="email" id="method-email" />
+                                <div class="method-card">
+                                    <div class="method-icon">📧</div>
+                                    <div class="method-info">
+                                        <h5>Email</h5>
+                                        <p>Rich notifications with task details</p>
+                                    </div>
+                                    <div class="method-check">
+                                        <svg viewBox="0 0 24 24" width="16" height="16">
+                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z" fill="currentColor"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </label>
+                            
+                            <label class="method-option">
+                                <input type="checkbox" name="notification-methods" value="sms" id="method-sms" />
+                                <div class="method-card">
+                                    <div class="method-icon">📱</div>
+                                    <div class="method-info">
+                                        <h5>SMS</h5>
+                                        <p>Quick text message alerts</p>
+                                    </div>
+                                    <div class="method-check">
+                                        <svg viewBox="0 0 24 24" width="16" height="16">
+                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z" fill="currentColor"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Preferences -->
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h4>⚙️ Preferences</h4>
+                            <p>Customize when and what notifications you receive</p>
+                        </div>
+                        
+                        <!-- Custom Notification Timing Section -->
+                        <div class="notification-timing-section">
+                            <div class="timing-section-header">
+                                <h4>
+                                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
+                                        <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
+                                    </svg>
+                                    Notification Timing
+                                </h4>
+                                <p>Customize when you receive task reminders and daily summaries</p>
+                            </div>
+                            
+                            <div class="reminder-times-container">
+                                <div class="reminder-times-header">
+                                    <h5>
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
+                                            <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
+                                        </svg>
+                                        Reminder Times
+                                    </h5>
+                                    <div class="add-reminder-dropdown">
+                                        <button id="add-reminder-btn" class="add-reminder-btn">
+                                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                                            </svg>
+                                            Add Reminder
+                                        </button>
+                                        <div class="add-reminder-menu">
+                                            <div class="add-reminder-quick-options">
+                                                <button class="quick-reminder-btn" data-minutes="5">5 minutes</button>
+                                                <button class="quick-reminder-btn" data-minutes="15">15 minutes</button>
+                                                <button class="quick-reminder-btn" data-minutes="30">30 minutes</button>
+                                                <button class="quick-reminder-btn" data-minutes="60">1 hour</button>
+                                                <button class="quick-reminder-btn" data-minutes="120">2 hours</button>
+                                                <button class="quick-reminder-btn" data-minutes="300">5 hours</button>
+                                                <button class="quick-reminder-btn" data-minutes="720">12 hours</button>
+                                                <button class="quick-reminder-btn" data-minutes="1440">1 day</button>
+                                            </div>
+                                            <div class="add-reminder-custom">
+                                                <h6>Custom Time</h6>
+                                                <div class="custom-reminder-form">
+                                                    <input type="number" id="custom-reminder-value" placeholder="1" min="1" max="9999" aria-label="Custom reminder time value">
+                                                    <select id="custom-reminder-unit" aria-label="Time unit for custom reminder">
+                                                        <option value="minutes">Minutes</option>
+                                                        <option value="hours">Hours</option>
+                                                        <option value="days">Days</option>
+                                                    </select>
+                                                    <button id="add-custom-reminder-btn" type="button">Add</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="reminder-times-list" id="reminder-times-list">
+                                    <!-- Dynamic reminder time items will be added here -->
+                                </div>
+                            </div>
+                            
+                            <div class="daily-summary-container">
+                                <div class="daily-summary-header">
+                                    <h5>
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
+                                            <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
+                                        </svg>
+                                        Daily Summary Time
+                                    </h5>
+                                    <p>Choose when to receive your daily task summary</p>
+                                </div>
+                                
+                                <div class="daily-summary-time-selector">
+                                    <label for="daily-summary-time">
+                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M6 .5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H9v1.07a7.001 7.001 0 0 1 3.274 12.474l-.161.161a.5.5 0 0 1-.707-.707l.161-.161A6.001 6.001 0 1 0 9 2.07V3h.5a.5.5 0 0 1 0 1h-3a.5.5 0 0 1 0-1H7V1h-.5A.5.5 0 0 1 6 .5zm2.5 5.034V5.5a.5.5 0 0 1 1 0v2.535l1.933.966a.5.5 0 0 1-.466.932l-2.1-1.05A.5.5 0 0 1 8.5 7.87V5.534z"/>
+                                        </svg>
+                                        Send daily summary at:
+                                    </label>
+                                    <input type="time" id="daily-summary-time" value="23:30" />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="preference-list">
+                            <div class="preference-item">
+                                <div class="pref-info">
+                                    <div class="pref-icon">📊</div>
+                                    <div class="pref-details">
+                                        <h5>Daily Summary</h5>
+                                        <p>Enable evening recap of your completed tasks</p>
+                                    </div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="daily-summary" aria-label="Enable daily summary notifications" checked />
+                                    <span class="switch-track">
+                                        <span class="switch-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="preference-item">
+                                <div class="pref-info">
+                                    <div class="pref-icon">�</div>
+                                    <div class="pref-details">
+                                        <h5>Auto Inspiration</h5>
+                                        <p>Receive sporadic motivational messages throughout the day</p>
+                                    </div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="auto-inspiration" aria-label="Enable automatic inspiration messages" />
+                                    <span class="switch-track">
+                                        <span class="switch-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="preference-item">
+                                <div class="pref-info">
+                                    <div class="pref-icon">💫</div>
+                                    <div class="pref-details">
+                                        <h5>Manual Inspiration</h5>
+                                        <p>Get a motivational message right now</p>
+                                    </div>
+                                </div>
+                                <button type="button" id="send-inspiration-btn" class="action-btn secondary">
+                                    <span>✨ Send Now</span>
+                                </button>
+                            </div>
+
+                            <div class="preference-item">
+                                <div class="pref-info">
+                                    <div class="pref-icon">🗑️</div>
+                                    <div class="pref-details">
+                                        <h5>Auto-Delete Old Tasks</h5>
+                                        <p>Automatically remove completed tasks after a set time to save storage</p>
+                                    </div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="auto-cleanup" aria-label="Enable automatic cleanup of old tasks" />
+                                    <span class="switch-track">
+                                        <span class="switch-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="preference-item hidden" id="cleanup-weeks-setting">
+                                <div class="pref-info">
+                                    <div class="pref-icon">📅</div>
+                                    <div class="pref-details">
+                                        <h5>Keep Tasks For</h5>
+                                        <p>How long to keep completed tasks before deletion</p>
+                                    </div>
+                                </div>
+                                <select id="cleanup-weeks" class="select-field" title="Set how long to keep completed tasks">
+                                    <option value="1">1 week</option>
+                                    <option value="2" selected>2 weeks</option>
+                                    <option value="4">1 month</option>
+                                    <option value="8">2 months</option>
+                                    <option value="12">3 months</option>
+                                </select>
+                            </div>
+                            
+                            <div id="inspiration-message" class="inspiration-display hidden"></div>
+                        </div>
+                    </div>
+
+                    <!-- Test Section -->
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h4>🧪 Test Your Setup</h4>
+                            <p>Make sure everything works perfectly</p>
+                        </div>
+                        
+                        <div class="test-actions">
+                            <button type="button" id="test-notification-btn" class="test-btn">
+                                <span class="btn-icon">🔗</span>
+                                <span class="btn-text">
+                                    <strong>Connection Test</strong>
+                                    <small>Verify your settings</small>
+                                </span>
+                            </button>
+
+                            <button type="button" id="test-task-reminder-btn" class="test-btn">
+                                <span class="btn-icon">⏰</span>
+                                <span class="btn-text">
+                                    <strong>Task Reminder</strong>
+                                    <small>Preview format</small>
+                                </span>
+                            </button>
+
+                            <button type="button" id="test-daily-summary-btn" class="test-btn">
+                                <span class="btn-icon">📊</span>
+                                <span class="btn-text">
+                                    <strong>Daily Summary</strong>
+                                    <small>Preview email</small>
+                                </span>
+                            </button>
+                        </div>
+
+                        <div class="test-status" id="test-status">
+                            <div class="status-item">
+                                <span class="label">Last Test:</span>
+                                <span class="value" id="last-test-time">Never</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Result:</span>
+                                <span class="value" id="test-result">Ready to test</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div> <!-- End notifications tab -->
+
+                <!-- Class Schedule Tab Content -->
+                <div class="settings-tab-content" id="classes-tab">
+                    <div class="class-schedule-section">
+                        <div class="section-header">
+                            <h4>📚 Class Schedule Management</h4>
+                            <p>Set up your semester and automatically add classes to your planner</p>
+                        </div>
+
+                        <!-- Semester Settings -->
+                        <div class="semester-settings">
+                            <h5>Semester Information</h5>
+                            <div class="semester-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="semester-name">Semester Name</label>
+                                        <input type="text" id="semester-name" placeholder="e.g., Fall 2025" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="semester-start">Start Date</label>
+                                        <input type="date" id="semester-start" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="semester-end">End Date</label>
+                                        <input type="date" id="semester-end" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Break Periods -->
+                        <div class="break-periods-section">
+                            <div class="section-sub-header">
+                                <h5>Break Periods (Optional)</h5>
+                                <p>Classes won't be scheduled during these periods</p>
+                                <button type="button" class="btn-add-break" id="add-break-btn">
+                                    <svg viewBox="0 0 24 24" width="16" height="16">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                                        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="2"/>
+                                        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                    Add Break
+                                </button>
+                            </div>
+                            <div class="break-periods-list" id="break-periods-list">
+                                <!-- Break periods will be added here dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Class Schedule -->
+                        <div class="class-schedule-management">
+                            <div class="section-sub-header">
+                                <h5>Classes</h5>
+                                <p>Add your recurring classes for the semester</p>
+                                <button type="button" class="btn-add-class" id="add-class-btn">
+                                    <svg viewBox="0 0 24 24" width="16" height="16">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                                        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="2"/>
+                                        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                    Add Class
+                                </button>
+                            </div>
+                            <div class="classes-list" id="classes-list">
+                                <!-- Classes will be added here dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Generation Actions -->
+                        <div class="generation-actions">
+                            <button type="button" class="btn-generate-schedule" id="generate-schedule-btn">
+                                <svg viewBox="0 0 24 24" width="18" height="18">
+                                    <path d="M14.828 10.828a4 4 0 0 0-5.656 0 4 4 0 0 0 0 5.656l5.656-5.656z" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <path d="M9.172 13.172a4 4 0 0 0 5.656 0 4 4 0 0 0 0-5.656l-5.656 5.656z" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                                </svg>
+                                Generate Class Schedule
+                            </button>
+                            <button type="button" class="btn-clear-schedule" id="clear-schedule-btn">
+                                <svg viewBox="0 0 24 24" width="18" height="18">
+                                    <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" stroke-width="2"/>
+                                    <line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" stroke-width="2"/>
+                                </svg>
+                                Clear Generated Classes
+                            </button>
+                        </div>
+                    </div>
+                </div> <!-- End class schedule tab -->
+
+                <!-- Action Buttons -->
+                <div class="settings-footer">
+                    <button type="button" id="sign-out-btn" class="sign-out-btn">
+                        <svg viewBox="0 0 24 24" width="18" height="18">
+                            <path d="M17 7L15.59 8.41L17.17 10H9V12H17.17L15.59 13.59L17 15L21 11L17 7M4 5H12V3H4C2.9 3 2 3.9 2 5V19C2 20.1 2.9 21 4 21H12V19H4V5Z" fill="currentColor"/>
+                        </svg>
+                        <span>Sign Out</span>
+                    </button>
+                    <button type="button" id="save-settings-btn" class="save-btn">
+                        <svg viewBox="0 0 24 24" width="18" height="18">
+                            <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3M19 19H5V5H16.17L19 7.83V19M12 12C13.1 12 14 12.9 14 14S13.1 16 12 16 10 15.1 10 14 10.9 12 12 12M6 6H15V10H6V6Z" fill="currentColor"/>
+                        </svg>
+                        <span>Save Settings</span>
+                    </button>
+                </div>
+                
+                <div class="settings-privacy-footer">
+                    <a href="/privacy" target="_blank">Privacy Policy</a>
+                </div>
+                
+                <div id="settings-status" class="feedback-message hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weather Modal -->
+    <div class="modal" id="weather-modal" aria-hidden="true">
+        <div class="modal-overlay"></div>
+        <div class="modal-content weather-modal-content">
+            <div class="modal-header">
+                <h2><i class="wi wi-day-sunny"></i> Weather</h2>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- City Search Section (Always Visible) -->
+            <div class="weather-search-section">
+                <div class="search-row">
+                    <div class="autocomplete-container">
+                        <input type="text" id="weather-city-search" placeholder="Search for any city..." class="city-search-input" autocomplete="off">
+                        <div class="autocomplete-dropdown hidden" id="weather-search-dropdown"></div>
+                    </div>
+                    <button type="button" id="weather-search-btn" class="primary-btn">Search</button>
+                </div>
+            </div>
+            
+            <div class="weather-content">
+                <div id="location-request" class="location-request">
+                    <div class="location-icon">📍</div>
+                    <h3>Location Access Needed</h3>
+                    <p>Allow location access to get accurate weather for your area</p>
+                    <button type="button" id="allow-location-btn" class="primary-btn">Allow Location Access</button>
+                    <div class="manual-location">
+                        <p>Or search manually:</p>
+                        <div class="search-group autocomplete-container">
+                            <input type="text" id="manual-city-input" placeholder="Enter city name..." class="city-search-input" autocomplete="off">
+                            <div class="autocomplete-dropdown hidden" id="manual-autocomplete-dropdown"></div>
+                            <button type="button" id="manual-search-btn" class="secondary-btn">Search</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="weather-loading" class="weather-loading hidden">
+                    <div class="loading-spinner"></div>
+                    <p>Getting weather data...</p>
+                </div>
+                
+                <div id="weather-data" class="weather-data hidden">
+                    <!-- Current Weather -->
+                    <div class="weather-current">
+                        <div class="current-main">
+                            <div class="current-icon">
+                                <i class="wi" id="current-weather-icon"></i>
+                            </div>
+                            <div class="current-info">
+                                <div class="current-temp" id="current-temp">--°</div>
+                                <div class="current-condition" id="current-condition">Loading...</div>
+                                <div class="current-location" id="current-location">📍 Getting location...</div>
+                            </div>
+                        </div>
+                        
+                        <div class="current-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Feels Like</span>
+                                <span class="detail-value" id="feels-like">--°</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Humidity</span>
+                                <span class="detail-value" id="humidity">--%</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Wind</span>
+                                <span class="detail-value" id="wind-speed">-- mph</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 7-Day Forecast -->
+                    <div class="weather-forecast">
+                        <h3>Forecast</h3>
+                        <div class="forecast-grid" id="forecast-grid">
+                            <!-- Forecast items will be populated here -->
+                        </div>
+                    </div>
+                    
+                    <div class="weather-actions">
+                        <button type="button" id="refresh-weather-btn" class="secondary-btn">
+                            <svg viewBox="0 0 24 24" width="16" height="16">
+                                <polyline points="23 4 23 10 17 10" stroke="currentColor" stroke-width="2" fill="none"/>
+                                <polyline points="1 20 1 14 7 14" stroke="currentColor" stroke-width="2" fill="none"/>
+                                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" stroke-width="2" fill="none"/>
+                            </svg>
+                            Refresh Weather
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="weather-error" class="weather-error hidden">
+                    <div class="error-icon">⚠️</div>
+                    <h3>Unable to get weather data</h3>
+                    <p id="weather-error-message">Please check your API key configuration.</p>
+                    <button type="button" id="retry-weather-btn" class="primary-btn">Try Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Planning Assistant Panel -->
+    <div class="assistant-panel" id="assistant-panel">
+        <div class="assistant-header">
+            <div class="assistant-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                <span>Planning Assistant</span>
+            </div>
+            <button class="assistant-close" id="assistant-close" aria-label="Close Assistant">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                    <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                </svg>
+            </button>
+        </div>
+        
+        <div class="assistant-chat" id="assistant-chat">
+            <div class="assistant-welcome">
+                <div class="welcome-avatar">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+                <h3>Hi! I'm your planning assistant</h3>
+                <p>I can help you organize your schedule, break down tasks, and even create them for you! Try asking me:</p>
+                <ul class="welcome-suggestions">
+                    <li>"Help me plan my Monday morning"</li>
+                    <li>"Break down 'Study for exam' into smaller tasks"</li>
+                    <li>"Create a workout schedule for this week"</li>
+                    <li>"Plan my day with 2-hour focus blocks"</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="assistant-input">
+            <div class="input-container">
+                <input type="text" id="assistant-input" placeholder="Ask me anything about planning..." autocomplete="off">
+                <button class="voice-btn" id="voice-btn" title="Voice Input">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                </button>
+                <button class="send-btn" id="assistant-send" title="Send Message">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notification-container" class="notification-container"></div>
+
+    <!-- Add Class Modal -->
+    <div id="add-class-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Class</h3>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="add-class-form">
+                    <div class="form-group">
+                        <label for="class-name">Class Name *</label>
+                        <input type="text" id="class-name" placeholder="e.g., Introduction to Computer Science" required />
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="class-code">Course Code</label>
+                            <input type="text" id="class-code" placeholder="e.g., CS 101" />
+                        </div>
+                        <div class="form-group">
+                            <label for="class-credits">Credits</label>
+                            <input type="number" id="class-credits" min="1" max="10" placeholder="3" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="class-professor">Professor</label>
+                        <input type="text" id="class-professor" placeholder="Dr. Smith" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="class-location">Location</label>
+                        <input type="text" id="class-location" placeholder="Room 101, Science Building" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Days of Week *</label>
+                        <div class="days-selector">
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Monday" />
+                                <span>Mon</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Tuesday" />
+                                <span>Tue</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Wednesday" />
+                                <span>Wed</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Thursday" />
+                                <span>Thu</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Friday" />
+                                <span>Fri</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Saturday" />
+                                <span>Sat</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="class-days" value="Sunday" />
+                                <span>Sun</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="class-start-time">Start Time *</label>
+                            <input type="time" id="class-start-time" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="class-end-time">End Time *</label>
+                            <input type="time" id="class-end-time" required />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="class-color">Class Color</label>
+                        <div class="color-picker">
+                            <input type="color" id="class-color" value="#4A90E2" />
+                            <span class="color-preview"></span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-cancel">Cancel</button>
+                <button type="button" id="save-class-btn" class="modal-save">Save Class</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Class Modal -->
+    <div id="edit-class-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Class</h3>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-class-form">
+                    <div class="form-group">
+                        <label for="edit-class-name">Class Name *</label>
+                        <input type="text" id="edit-class-name" placeholder="e.g., Introduction to Computer Science" required />
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-class-code">Course Code</label>
+                            <input type="text" id="edit-class-code" placeholder="e.g., CS 101" />
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-class-credits">Credits</label>
+                            <input type="number" id="edit-class-credits" min="1" max="10" placeholder="3" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-class-professor">Professor</label>
+                        <input type="text" id="edit-class-professor" placeholder="Dr. Smith" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-class-location">Location</label>
+                        <input type="text" id="edit-class-location" placeholder="Room 101, Science Building" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Days of Week *</label>
+                        <div class="days-selector">
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Monday" />
+                                <span>Mon</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Tuesday" />
+                                <span>Tue</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Wednesday" />
+                                <span>Wed</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Thursday" />
+                                <span>Thu</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Friday" />
+                                <span>Fri</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Saturday" />
+                                <span>Sat</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" name="edit-class-days" value="Sunday" />
+                                <span>Sun</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-class-start-time">Start Time *</label>
+                            <input type="time" id="edit-class-start-time" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-class-end-time">End Time *</label>
+                            <input type="time" id="edit-class-end-time" required />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edit-class-color">Class Color</label>
+                        <div class="color-picker">
+                            <input type="color" id="edit-class-color" value="#4A90E2" />
+                            <span class="color-preview"></span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-cancel">Cancel</button>
+                <button type="button" id="update-class-btn" class="modal-save">Update Class</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Break Modal -->
+    <div id="add-break-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Break Period</h3>
+                <button class="modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="add-break-form">
+                    <div class="form-group">
+                        <label for="break-name">Break Name *</label>
+                        <input type="text" id="break-name" placeholder="e.g., Spring Break, Thanksgiving" required />
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="break-start">Start Date *</label>
+                            <input type="date" id="break-start" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="break-end">End Date *</label>
+                            <input type="date" id="break-end" required />
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-cancel">Cancel</button>
+                <button type="button" id="save-break-btn" class="modal-save">Save Break</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmation-modal" class="confirmation-modal-overlay">
+        <div class="confirmation-modal">
+            <div class="confirmation-modal-header">
+                <div class="confirmation-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2"/>
+                        <line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </div>
+                <h3 id="confirmation-title">Confirm Action</h3>
+            </div>
+            <div class="confirmation-modal-body">
+                <p id="confirmation-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="confirmation-modal-footer">
+                <button type="button" id="confirmation-cancel" class="confirmation-btn confirmation-btn-cancel">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    <span>Cancel</span>
+                </button>
+                <button type="button" id="confirmation-confirm" class="confirmation-btn confirmation-btn-confirm">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                    <span id="confirmation-confirm-text">Confirm</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/script.js"></script>
+</body>
+</html>

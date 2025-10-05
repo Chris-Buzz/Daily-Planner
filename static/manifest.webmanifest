@@ -1,0 +1,26 @@
+{
+  "name": "Planno - Your Daily Planning Assistant",
+  "short_name": "Planno",
+  "description": "Your daily planning assistant - Organize your tasks with beautiful and intuitive interface",
+  "start_url": "/planner",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1abc9c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "PlannerIcon2.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "PlannerIcon2.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "lang": "en-US"
+}

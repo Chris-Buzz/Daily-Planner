@@ -1,0 +1,41 @@
+# Core Flask Framework
+Flask==2.3.3
+Werkzeug==2.3.7
+flask-cors==4.0.0
+
+# Database and Authentication
+firebase-admin==6.2.0
+
+# Environment and Configuration
+python-dotenv==1.0.0
+
+# Communications
+twilio==8.10.0
+
+# Task Scheduling
+schedule==1.2.0
+
+# HTTP Requests for external APIs
+requests==2.31.0
+
+# JWT Token Handling
+PyJWT==2.8.0
+
+# Geocoding and Location Services
+geopy==2.4.0
+
+# Google AI and Generative Services
+google-generativeai==0.3.0
+
+# Date and Time Utilities
+pytz==2023.3
+
+# CSV Processing (for data exports)
+# Built-in Python module - no install needed
+
+# Regular Expressions
+# Built-in Python module - no install needed
+
+# Additional Production Dependencies
+gunicorn==21.2.0  # WSGI server for production
+python-json-logger==2.0.7  # Structured logging for production

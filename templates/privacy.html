@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Planno</title>
+    <link rel="icon" type="image/png" href="/static/PlannerIcon.png">
+    <style>
+        :root {
+            --primary: #5B5FDE;
+            --primary-light: #7478E5;
+            --primary-dark: #4A4EBD;
+            --primary-alpha: rgba(91, 95, 222, 0.1);
+            
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #F9FAFB;
+            --bg-tertiary: #F3F4F6;
+            
+            --text-primary: #111827;
+            --text-secondary: #6B7280;
+            --text-tertiary: #9CA3AF;
+            
+            --border: #E5E7EB;
+            --border-light: #F3F4F6;
+            
+            --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+            
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        [data-theme="dark"] {
+            --primary: #7478E5;
+            --primary-light: #8B8FEC;
+            --primary-dark: #5B5FDE;
+            --primary-alpha: rgba(116, 120, 229, 0.15);
+            
+            --bg-primary: #0F172A;
+            --bg-secondary: #1E293B;
+            --bg-tertiary: #334155;
+            
+            --text-primary: #F1F5F9;
+            --text-secondary: #CBD5E1;
+            --text-tertiary: #94A3B8;
+            
+            --border: #334155;
+            --border-light: #1E293B;
+            
+            --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 120px; /* Account for sticky header */
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: background var(--transition-base), color var(--transition-base);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        .privacy-header {
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            padding: 32px 0;
+        }
+
+        .header-content {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            width: fit-content;
+        }
+
+        .back-btn:hover {
+            color: var(--primary);
+            transform: translateX(-4px);
+        }
+
+        .back-btn svg {
+            transition: transform var(--transition-fast);
+        }
+
+        .back-btn:hover svg {
+            transform: translateX(-2px);
+        }
+
+        .page-title {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+            margin: 0;
+        }
+
+        .page-subtitle {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        /* Main Content */
+        .privacy-content {
+            padding: 48px 0 80px;
+        }
+
+        /* Effective Date */
+        .effective-date {
+            background: var(--primary-alpha);
+            border-left: 4px solid var(--primary);
+            padding: 16px 20px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 32px;
+            font-size: 0.9375rem;
+            color: var(--text-primary);
+        }
+
+        .effective-date strong {
+            color: var(--primary);
+        }
+
+        /* Highlight Card */
+        .highlight-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 32px;
+            border-radius: var(--radius-xl);
+            margin-bottom: 48px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .highlight-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            font-weight: 700;
+        }
+
+        .commitment-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .commitment-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .commitment-list li:before {
+            content: "✓";
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        /* Table of Contents */
+        .table-of-contents {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 32px;
+            margin-bottom: 48px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .toc-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+        }
+
+        .toc-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toc-list li a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: var(--radius-md);
+        }
+
+        .toc-list li a:hover {
+            color: var(--primary);
+            background: var(--primary-alpha);
+            transform: translateX(4px);
+        }
+
+        /* Section Card */
+        .section-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: var(--shadow-sm);
+            scroll-margin-top: 100px;
+        }
+
+        .section-header {
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .section-header h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .section-intro {
+            font-size: 1.0625rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        .section-content {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .subsection h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+
+        .subsection h4 {
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .subsection p {
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            line-height: 1.7;
+        }
+
+        .subsection ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-left: 24px;
+        }
+
+        .subsection ul li {
+            color: var(--text-secondary);
+            position: relative;
+            padding-left: 24px;
+            line-height: 1.7;
+        }
+
+        .subsection ul li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        /* Info Cards */
+        .info-card {
+            background: var(--bg-tertiary);
+            border-left: 4px solid var(--primary);
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            margin: 16px 0;
+        }
+
+        .info-card h4 {
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .info-card p {
+            color: var(--text-secondary);
+            margin: 0;
+            line-height: 1.7;
+        }
+
+        .info-card.security-card {
+            border-left-color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .info-card.no-share-card {
+            border-left-color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .info-card.warning-card {
+            border-left-color: var(--warning);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        /* Rights Grid */
+        .rights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 16px;
+        }
+
+        .right-item {
+            background: var(--bg-tertiary);
+            padding: 24px;
+            border-radius: var(--radius-lg);
+            text-align: center;
+            transition: all var(--transition-base);
+        }
+
+        .right-item:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--primary);
+        }
+
+        .right-item h4 {
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 12px 0 8px;
+        }
+
+        .right-item p {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.9375rem;
+        }
+
+        .data-table td {
+            color: var(--text-secondary);
+            font-size: 0.9375rem;
+        }
+
+        /* Contact Section */
+        .contact-section {
+            margin-top: 48px;
+        }
+
+        .contact-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 32px;
+            text-align: center;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .contact-card h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 16px 0 8px;
+        }
+
+        .contact-card p {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        .contact-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .contact-item {
+            background: var(--bg-tertiary);
+            padding: 16px 20px;
+            border-radius: var(--radius-lg);
+            font-size: 0.9375rem;
+        }
+
+        .contact-item strong {
+            color: var(--text-primary);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .contact-item a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact-item a:hover {
+            text-decoration: underline;
+        }
+
+        /* Footer */
+        .privacy-footer {
+            margin-top: 64px;
+            padding-top: 32px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .last-updated {
+            font-size: 0.875rem;
+            color: var(--text-tertiary);
+            margin-bottom: 8px;
+        }
+
+        .footer-note {
+            font-size: 0.9375rem;
+            color: var(--text-secondary);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 16px;
+            }
+
+            .privacy-header {
+                padding: 24px 0;
+            }
+
+            .page-title {
+                font-size: 1.75rem;
+            }
+
+            .page-subtitle {
+                font-size: 1rem;
+            }
+
+            .privacy-content {
+                padding: 32px 0 48px;
+            }
+
+            .section-card,
+            .highlight-card,
+            .table-of-contents,
+            .contact-card {
+                padding: 24px 20px;
+            }
+
+            .section-header h2 {
+                font-size: 1.5rem;
+            }
+
+            .rights-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .data-table {
+                font-size: 0.875rem;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 12px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="privacy-header">
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="back-btn">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                    </svg>
+                    Back to Planno
+                </a>
+                <h1 class="page-title">Privacy Policy</h1>
+                <p class="page-subtitle">Your privacy and data security are our top priorities</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="privacy-content">
+        <div class="container">
+            <div class="effective-date">
+                <strong>Effective Date:</strong> October 4, 2025 | <strong>Last Updated:</strong> October 4, 2025
+            </div>
+
+            <div class="highlight-card">
+                <h3>Our Privacy Commitments</h3>
+                <ul class="commitment-list">
+                    <li>Your tasks and personal data are never sold or shared with third parties for marketing</li>
+                    <li>All data is encrypted and stored securely using industry-standard protocols</li>
+                    <li>You maintain full control and can delete your account and data at any time</li>
+                    <li>We collect only the minimum data necessary for app functionality</li>
+                    <li>No manual viewing of user tasks by staff members without explicit consent</li>
+                </ul>
+            </div>
+
+            <div class="table-of-contents">
+                <h3 class="toc-title">Table of Contents</h3>
+                <ol class="toc-list">
+                    <li><a href="#section-1">1. Introduction</a></li>
+                    <li><a href="#section-2">2. Information We Collect</a></li>
+                    <li><a href="#section-3">3. How We Use Your Information</a></li>
+                    <li><a href="#section-4">4. Data Storage and Security</a></li>
+                    <li><a href="#section-5">5. Data Sharing and Third Parties</a></li>
+                    <li><a href="#section-6">6. Cookies and Tracking Technologies</a></li>
+                    <li><a href="#section-7">7. Your Privacy Rights</a></li>
+                    <li><a href="#section-8">8. Data Retention and Deletion</a></li>
+                    <li><a href="#section-9">9. Children's Privacy</a></li>
+                    <li><a href="#section-10">10. International Data Transfers</a></li>
+                    <li><a href="#section-11">11. Changes to This Policy</a></li>
+                    <li><a href="#section-12">12. Contact Us</a></li>
+                </ol>
+            </div>
+
+            <div id="section-1" class="section-card">
+                <div class="section-header">
+                    <h2>1. Introduction</h2>
+                    <p class="section-intro">Welcome to Planno. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our daily planning application and services.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <p>Planno ("we," "us," or "our") is committed to protecting your privacy. This policy applies to all users of the Planno application, whether accessed via web, mobile, or desktop platforms.</p>
+                        <p>By using Planno, you agree to the collection and use of information in accordance with this Privacy Policy. If you do not agree with our policies and practices, please do not use our services.</p>
+                    </div>
+                    <div class="info-card">
+                        <h4>Important Note</h4>
+                        <p>We recommend reading this Privacy Policy in its entirety to understand how your data is handled. If you have questions, please contact us at privacy@planno.app.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-2" class="section-card">
+                <div class="section-header">
+                    <h2>2. Information We Collect</h2>
+                    <p class="section-intro">We collect several types of information to provide and improve our services to you.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>2.1 Account Information</h3>
+                        <p>When you create a Planno account, we collect:</p>
+                        <ul>
+                            <li>Email address (required for authentication and account recovery)</li>
+                            <li>Display name or full name (for personalization)</li>
+                            <li>Password (encrypted and never stored in plain text)</li>
+                            <li>Profile picture (optional)</li>
+                            <li>Account preferences and settings</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>2.2 Planning and Task Data</h3>
+                        <p>To provide our core planning services, we store:</p>
+                        <ul>
+                            <li>Tasks, to-do items, and their descriptions</li>
+                            <li>Task metadata (creation date, due dates, completion status, priorities)</li>
+                            <li>Schedules, calendar events, and time blocks</li>
+                            <li>Categories, tags, and organizational preferences</li>
+                            <li>Notes, comments, and task descriptions you create</li>
+                            <li>Recurring task patterns and templates</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>2.3 Communication Preferences</h3>
+                        <p>If you enable notifications, we collect:</p>
+                        <ul>
+                            <li>Phone number (for SMS reminders, if enabled and with explicit consent)</li>
+                            <li>Email notification preferences</li>
+                            <li>Preferred notification times and delivery methods</li>
+                            <li>Push notification tokens for mobile devices</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>2.4 Usage Information</h3>
+                        <p>We automatically collect certain information about how you use Planno:</p>
+                        <ul>
+                            <li>Device information (device type, operating system, browser type)</li>
+                            <li>IP address and general location data (country/region level only)</li>
+                            <li>Login timestamps and session duration</li>
+                            <li>Feature usage patterns (which features you use most)</li>
+                            <li>Error logs and diagnostic information</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>2.5 AI Assistant Interactions</h3>
+                        <p>When you use our AI planning assistant:</p>
+                        <ul>
+                            <li>Your queries and requests to the AI assistant</li>
+                            <li>AI-generated suggestions and responses</li>
+                            <li>Interaction patterns to improve AI performance (anonymized)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-3" class="section-card">
+                <div class="section-header">
+                    <h2>3. How We Use Your Information</h2>
+                    <p class="section-intro">We use the collected information for specific, legitimate purposes to provide and improve our services.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>3.1 Primary Service Functions</h3>
+                        <ul>
+                            <li>Create, store, and synchronize your tasks across devices</li>
+                            <li>Provide task reminders via email, SMS, or push notifications</li>
+                            <li>Generate daily summaries and progress reports</li>
+                            <li>Offer AI-powered planning suggestions and assistance</li>
+                            <li>Enable task scheduling and calendar integration</li>
+                            <li>Facilitate task sharing and collaboration (if enabled)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>3.2 Service Improvement and Analytics</h3>
+                        <ul>
+                            <li>Analyze usage patterns to improve features (with anonymized data)</li>
+                            <li>Optimize notification timing and content relevance</li>
+                            <li>Train and improve AI models for better suggestions</li>
+                            <li>Identify and fix bugs or technical issues</li>
+                            <li>Develop new features based on user needs</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>3.3 Security and Fraud Prevention</h3>
+                        <ul>
+                            <li>Detect and prevent unauthorized access</li>
+                            <li>Monitor for suspicious activity or abuse</li>
+                            <li>Enforce our Terms of Service</li>
+                            <li>Comply with legal obligations</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>3.4 Communication</h3>
+                        <ul>
+                            <li>Send important service updates and announcements</li>
+                            <li>Respond to your inquiries and support requests</li>
+                            <li>Send optional product updates (with your consent)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-4" class="section-card">
+                <div class="section-header">
+                    <h2>4. Data Storage and Security</h2>
+                    <p class="section-intro">We implement industry-standard security measures to protect your data.</p>
+                </div>
+                <div class="section-content">
+                    <div class="info-card security-card">
+                        <h4>Enterprise-Grade Security</h4>
+                        <p>Your data is protected using the same security standards employed by major technology companies, including encryption, access controls, and regular security audits.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>4.1 Encryption</h3>
+                        <ul>
+                            <li><strong>In Transit:</strong> All data transmitted between your device and our servers is encrypted using TLS 1.3 (Transport Layer Security)</li>
+                            <li><strong>At Rest:</strong> Data stored in our databases is encrypted using AES-256 encryption</li>
+                            <li><strong>Passwords:</strong> User passwords are hashed using bcrypt with salt</li>
+                            <li><strong>Phone Numbers:</strong> SMS-enabled phone numbers are encrypted before storage</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>4.2 Infrastructure Security</h3>
+                        <ul>
+                            <li>Hosted on Google Firebase with enterprise-level security certifications</li>
+                            <li>Regular security patches and updates</li>
+                            <li>Distributed denial-of-service (DDoS) protection</li>
+                            <li>Automated backup systems with redundancy</li>
+                            <li>Network isolation and firewall protection</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>4.3 Access Controls</h3>
+                        <ul>
+                            <li>Multi-factor authentication for administrative access</li>
+                            <li>Role-based access control (RBAC) for team members</li>
+                            <li>Comprehensive audit logs of all data access</li>
+                            <li>Zero-knowledge architecture where feasible</li>
+                            <li>Regular access reviews and permission audits</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>4.4 Data Isolation</h3>
+                        <p>Your data is logically isolated from other users' data. Only you can access your personal tasks and planning information through your authenticated account.</p>
+                    </div>
+                    
+                    <div class="info-card warning-card">
+                        <h4>Your Responsibility</h4>
+                        <p>Please keep your password secure and do not share your account credentials. You are responsible for all activities that occur under your account. If you believe your account has been compromised, contact us immediately.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-5" class="section-card">
+                <div class="section-header">
+                    <h2>5. Data Sharing and Third Parties</h2>
+                    <p class="section-intro">We do not sell your personal data. We only share information with trusted service providers as necessary to operate our services.</p>
+                </div>
+                <div class="section-content">
+                    <div class="info-card no-share-card">
+                        <h4>We Never Sell Your Data</h4>
+                        <p>We do not and will never sell, rent, or trade your personal information to third parties for marketing purposes. Your privacy is not for sale.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>5.1 Service Providers</h3>
+                        <p>We work with the following categories of trusted service providers:</p>
+                        
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Service Type</th>
+                                    <th>Provider</th>
+                                    <th>Purpose</th>
+                                    <th>Data Shared</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Cloud Hosting</td>
+                                    <td>Google Firebase</td>
+                                    <td>Data storage, authentication, and hosting</td>
+                                    <td>User profile data, task data, authentication credentials</td>
+                                </tr>
+                                <tr>
+                                    <td>AI Services</td>
+                                    <td>Google Gemini</td>
+                                    <td>AI task planning and suggestions</td>
+                                    <td>Task descriptions, user preferences (no personally identifiable information)</td>
+                                </tr>
+                                <tr>
+                                    <td>Weather Data</td>
+                                    <td>OpenWeather</td>
+                                    <td>Weather information for planning</td>
+                                    <td>Location data (city/region only)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <p>All service providers are bound by contractual obligations to protect your data and use it only as necessary to provide their services to us.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>5.2 Legal Requirements</h3>
+                        <p>We may disclose your information if required to do so by law or in response to valid requests by public authorities (e.g., a court or government agency).</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-6" class="section-card">
+                <div class="section-header">
+                    <h2>6. Cookies and Tracking Technologies</h2>
+                    <p class="section-intro">We use cookies and similar tracking technologies to enhance your experience and analyze how you use our service.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>6.1 What Are Cookies?</h3>
+                        <p>Cookies are small text files stored on your device that help us remember your preferences and provide a better user experience.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>6.2 Types of Cookies We Use</h3>
+                        <ul>
+                            <li><strong>Essential Cookies:</strong> Required for authentication and basic functionality</li>
+                            <li><strong>Preference Cookies:</strong> Remember your settings and preferences</li>
+                            <li><strong>Analytics Cookies:</strong> Help us understand how users interact with our service</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>6.3 Cookie Control</h3>
+                        <p>You can control and/or delete cookies through your browser settings. However, disabling certain cookies may affect the functionality of our service.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-7" class="section-card">
+                <div class="section-header">
+                    <h2>7. Your Privacy Rights</h2>
+                    <p class="section-intro">You have significant rights regarding your personal data. We're committed to helping you exercise these rights.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>7.1 Access and Portability</h3>
+                        <p><strong>Right to Access:</strong> You can request a copy of all personal data we hold about you.</p>
+                        <p><strong>Right to Data Portability:</strong> You can request your data in a machine-readable format to transfer to another service.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>7.2 Correction and Deletion</h3>
+                        <p><strong>Right to Rectification:</strong> You can update or correct your personal information at any time through your account settings.</p>
+                        <p><strong>Right to Erasure:</strong> You can request deletion of your account and all associated data at any time.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>7.3 Other Rights</h3>
+                        <ul>
+                            <li><strong>Right to Object:</strong> Object to processing of your personal data for specific purposes</li>
+                            <li><strong>Right to Restrict Processing:</strong> Request that we limit how we use your data</li>
+                            <li><strong>Right to Withdraw Consent:</strong> Withdraw consent for data processing at any time</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h4>How to Exercise Your Rights</h4>
+                        <p>To exercise any of these rights, please contact us using the information in Section 12. We will respond to your request within 30 days.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-8" class="section-card">
+                <div class="section-header">
+                    <h2>8. Data Retention and Deletion</h2>
+                    <p class="section-intro">We only keep your data for as long as necessary to provide our services and comply with legal obligations.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>8.1 Active Accounts</h3>
+                        <p>We retain your data for as long as your account is active or as needed to provide you with our services.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>8.2 Account Deletion</h3>
+                        <p>When you delete your account:</p>
+                        <ul>
+                            <li>Your profile information is immediately removed from active systems</li>
+                            <li>All tasks and planning data are permanently deleted within 30 days</li>
+                            <li>Some data may be retained in backup systems for up to 90 days for disaster recovery purposes</li>
+                            <li>We may retain certain information if required by law (e.g., tax records, fraud prevention)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>8.3 Inactive Accounts</h3>
+                        <p>If your account remains inactive for 3 years, we will send you a notification. If you don't respond within 90 days, we may delete your account and associated data.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-9" class="section-card">
+                <div class="section-header">
+                    <h2>9. Children's Privacy</h2>
+                    <p class="section-intro">We are committed to protecting the privacy of children.</p>
+                </div>
+                <div class="section-content">
+                    <div class="info-card warning-card">
+                        <h4>Age Requirement</h4>
+                        <p>Our service is not intended for children under 13 years of age. We do not knowingly collect personal information from children under 13.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>9.1 If We Discover Child Data</h3>
+                        <p>If we become aware that we have collected personal information from a child under 13 without parental consent, we will take steps to delete that information as quickly as possible.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>9.2 Parental Rights</h3>
+                        <p>If you are a parent or guardian and believe your child has provided us with personal information, please contact us immediately so we can delete it.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-10" class="section-card">
+                <div class="section-header">
+                    <h2>10. International Data Transfers</h2>
+                    <p class="section-intro">Your data may be transferred to and processed in countries other than your own.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>10.1 Global Infrastructure</h3>
+                        <p>We use Google Firebase, which operates globally. Your data may be stored and processed in the United States or other countries where Firebase has infrastructure.</p>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>10.2 Data Protection</h3>
+                        <p>When your data is transferred internationally, we ensure it receives the same level of protection through:</p>
+                        <ul>
+                            <li>Standard contractual clauses approved by regulatory authorities</li>
+                            <li>Compliance with applicable data protection frameworks (EU-U.S. Data Privacy Framework, etc.)</li>
+                            <li>Technical and organizational security measures</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-11" class="section-card">
+                <div class="section-header">
+                    <h2>11. Changes to This Policy</h2>
+                    <p class="section-intro">We may update this Privacy Policy from time to time to reflect changes in our practices or legal requirements.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>11.1 How We Notify You</h3>
+                        <p>When we make significant changes to this Privacy Policy, we will:</p>
+                        <ul>
+                            <li>Update the "Last Updated" date at the top of this page</li>
+                            <li>Notify you via email (if you have provided an email address)</li>
+                            <li>Display a prominent notice in the application</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="subsection">
+                        <h3>11.2 Your Acceptance</h3>
+                        <p>By continuing to use our service after changes become effective, you accept the updated Privacy Policy. If you don't agree with the changes, you may delete your account.</p>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h4>Review Regularly</h4>
+                        <p>We encourage you to review this Privacy Policy periodically to stay informed about how we protect your information.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-12" class="section-card">
+                <div class="section-header">
+                    <h2>12. Contact Us</h2>
+                    <p class="section-intro">We're here to help with any questions or concerns about your privacy.</p>
+                </div>
+                <div class="section-content">
+                    <div class="subsection">
+                        <h3>12.1 Privacy Questions</h3>
+                        <p>If you have questions about this Privacy Policy or our privacy practices, please contact us:</p>
+                        <ul>
+                            <li><strong>Email:</strong> privacy@dailyplanner.app</li>
+                            <li><strong>Response Time:</strong> We aim to respond to all privacy inquiries within 48 hours</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h4>We Value Your Privacy</h4>
+                        <p>Your trust is important to us. We're committed to protecting your privacy and handling your data responsibly. Thank you for using Daily Planner!</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

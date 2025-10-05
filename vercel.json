@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "planner.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "planner.py"
+    }
+  ],
+  "env": {
+    "FLASK_ENV": "production"
+  },
+  "functions": {
+    "planner.py": {
+      "maxDuration": 30
+    }
+  }
+}

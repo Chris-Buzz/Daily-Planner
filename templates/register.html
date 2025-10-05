@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign Up - Planno</title>
+  <link rel="icon" type="image/png" href="/static/PlannerIcon.png">
+  <link rel="stylesheet" href="/static/login.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="auth-box">
+    <h2>Join Planno</h2>
+    <p class="subtitle">Your intelligent daily planning assistant - Sign up to get started</p>
+
+    <!-- Registration form -->
+    <form id="register-form">
+      <input id="auth-name" type="text" placeholder="Full Name" required autocomplete="name" />
+      <input id="auth-email" type="email" placeholder="Email Address" required autocomplete="email" />
+      <input id="auth-password" type="password" placeholder="Password (min 6 characters)" required minlength="6" autocomplete="new-password" />
+      <input id="auth-confirm" type="password" placeholder="Confirm Password" required autocomplete="new-password" />
+      
+      <div class="remember-me">
+        <input type="checkbox" id="remember-me" name="remember-me">
+        <label for="remember-me">Remember me</label>
+      </div>
+
+      <button type="submit" id="btn-register">Create Account</button>
+    </form>
+
+    <div class="signup-link">
+      Already have an account? <a href="/login">Sign in here</a>
+    </div>
+
+    <hr/>
+
+    <button id="btn-google" type="button">
+      <img src="https://www.svgrepo.com/show/355037/google.svg" alt="Google" class="google-icon"/>
+      Continue with Google
+    </button>
+
+    <div id="auth-status"></div>
+    
+    <!-- Loading indicator -->
+    <div id="loading">
+      <div class="loading-spinner"></div>
+      <p>Creating your account...</p>
+    </div>
+
+    <div class="privacy-footer">
+      <a href="/privacy">Privacy Policy</a>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore-compat.js"></script>
+
+  <script>
+    // Firebase configuration - loaded securely from server
+    let auth, provider;
+
+    // Helper Functions
+    const statusEl = document.getElementById("auth-status");
+    const loadingEl = document.getElementById("loading");
+    const registerForm = document.getElementById("register-form");
+
+    const showMessage = (message, isError = false) => {
+      statusEl.innerHTML = `<div class="${isError ? 'auth-error' : 'auth-success'}">${message}</div>`;
+      setTimeout(() => {
+        statusEl.innerHTML = '';
+      }, 5000);
+    };
+
+    const showLoading = (show) => {
+      loadingEl.style.display = show ? 'flex' : 'none';
+      loadingEl.style.flexDirection = 'column';
+      loadingEl.style.alignItems = 'center';
+      
+      const buttons = ['btn-register', 'btn-google'];
+      buttons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = show;
+      });
+    };
+
+    const validateEmail = (email) => {
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(email);
+    };
+
+    const validatePassword = (password) => {
+      return password.length >= 6;
+    };
+
+    async function sendIdTokenToBackend(idToken, rememberMe = false) {
+      const response = await fetch("/api/sessionLogin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          idToken,
+          rememberMe 
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Session creation failed");
+      }
+    }
+
+    // Initialize Firebase and set up authentication (async IIFE)
+    (async function() {
+      try {
+        // Fetch Firebase configuration from secure API
+        const response = await fetch('/api/firebase-config');
+        if (!response.ok) throw new Error('Failed to load Firebase configuration');
+        
+        const firebaseConfig = await response.json();
+        if (firebaseConfig.error) throw new Error(firebaseConfig.error);
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        provider = new firebase.auth.GoogleAuthProvider();
+        
+        console.log('✅ Firebase initialized successfully');
+
+        // NOW set up all Firebase-dependent event listeners
+
+        // Email/Password Registration
+        registerForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          
+          const name = document.getElementById("auth-name").value.trim();
+          const email = document.getElementById("auth-email").value.trim();
+          const password = document.getElementById("auth-password").value;
+          const confirmPassword = document.getElementById("auth-confirm").value;
+
+          if (!name) {
+            showMessage("Please enter your full name.", true);
+            return;
+          }
+
+          if (!validateEmail(email)) {
+            showMessage("Please enter a valid email address.", true);
+            return;
+          }
+
+          if (!validatePassword(password)) {
+            showMessage("Password must be at least 6 characters long.", true);
+            return;
+          }
+
+          if (password !== confirmPassword) {
+            showMessage("Passwords do not match.", true);
+            return;
+          }
+
+          showLoading(true);
+          
+          try {
+            const { user } = await auth.createUserWithEmailAndPassword(email, password);
+            
+            // Update user profile with name
+            await user.updateProfile({ displayName: name });
+            
+            // Send verification email
+            await user.sendEmailVerification();
+            
+            showMessage("Account created successfully! Please check your email to verify your account before signing in.", false);
+            
+            // Wait a bit then redirect to login
+            setTimeout(() => {
+              window.location.href = "/login";
+            }, 3000);
+            
+          } catch (error) {
+            showLoading(false);
+            let errorMessage = "Registration failed. Please try again.";
+            
+            switch (error.code) {
+              case 'auth/email-already-in-use':
+                errorMessage = "This email is already registered. Please sign in instead.";
+                break;
+              case 'auth/invalid-email':
+                errorMessage = "Invalid email address.";
+                break;
+              case 'auth/weak-password':
+                errorMessage = "Password is too weak. Please use a stronger password.";
+                break;
+            }
+            
+            showMessage(errorMessage, true);
+          }
+        });
+
+        // Google Sign-Up with improved popup handling
+        document.getElementById("btn-google").addEventListener("click", async () => {
+          showLoading(true);
+          // Hide the registration form during sign-in
+          if (registerForm) registerForm.style.display = 'none';
+          const googleBtn = document.getElementById("btn-google");
+          if (googleBtn) googleBtn.style.display = 'none';
+          
+          try {
+            // Configure provider for better popup experience
+            provider.setCustomParameters({
+              prompt: 'select_account'
+            });
+            
+            // Use signInWithPopup - Firebase handles popup positioning
+            const result = await auth.signInWithPopup(provider);
+            
+            // Wait for popup to fully close before proceeding
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const idToken = await result.user.getIdToken();
+            
+            // Check Remember Me preference
+            const rememberMe = document.getElementById('remember-me')?.checked || false;
+            
+            await sendIdTokenToBackend(idToken, rememberMe);
+            
+            showMessage("Google sign-up successful! Redirecting...", false);
+            
+            // Wait a bit before redirecting
+            await new Promise(resolve => setTimeout(resolve, 800));
+            window.location.href = "/planner";
+            
+          } catch (error) {
+            showLoading(false);
+            // Show the registration form again on error
+            if (registerForm) registerForm.style.display = 'block';
+            const googleBtn = document.getElementById("btn-google");
+            if (googleBtn) googleBtn.style.display = 'block';
+            
+            let errorMessage = "Google sign-up failed. Please try again.";
+            
+            if (error.code === 'auth/popup-closed-by-user') {
+              errorMessage = "Sign-up cancelled.";
+            } else if (error.code === 'auth/popup-blocked') {
+              errorMessage = "Pop-up blocked. Please allow pop-ups and try again.";
+            } else if (error.code === 'auth/account-exists-with-different-credential') {
+              errorMessage = "An account already exists with this email. Please try logging in instead.";
+            } else if (error.code === 'auth/cancelled-popup-request') {
+              errorMessage = "Another sign-in attempt is in progress.";
+            }
+            
+            showMessage(errorMessage, true);
+          }
+        });
+
+        // Check if user is already logged in
+        // Only auto-redirect if Remember Me was previously enabled
+        auth.onAuthStateChanged(async (user) => {
+          if (user) {
+            // Check if user has Remember Me enabled (check for existing session)
+            try {
+              const sessionCheck = await fetch('/api/sessionStatus');
+              
+              if (sessionCheck.ok) {
+                // Valid session exists from Remember Me, redirect silently
+                console.log('Remember Me session detected, redirecting...');
+                
+                // Small delay to prevent jarring immediate redirect
+                setTimeout(() => {
+                  window.location.href = "/planner";
+                }, 300);
+              } else {
+                // No valid session - user must manually sign in
+                // Sign out from Firebase to clear auth state
+                console.log('No Remember Me session, requiring manual sign-in');
+                await auth.signOut();
+              }
+            } catch (error) {
+              console.error("Session check failed:", error);
+              // Sign out on error
+              await auth.signOut();
+            }
+          }
+        });
+
+        // Input validation styling
+        const inputs = document.querySelectorAll('input[type="email"], input[type="password"], input[type="text"]');
+        inputs.forEach(input => {
+          input.addEventListener('blur', () => {
+            if (!input.value) return;
+            
+            if (input.type === 'email') {
+              input.style.borderColor = validateEmail(input.value) ? 'var(--success)' : 'var(--danger)';
+            } else if (input.type === 'password') {
+              input.style.borderColor = validatePassword(input.value) ? 'var(--success)' : 'var(--danger)';
+            }
+          });
+          
+          input.addEventListener('focus', () => {
+            input.style.borderColor = 'var(--primary)';
+          });
+        });
+
+      } catch (error) {
+        console.error('❌ Firebase initialization failed:', error);
+        showMessage('Configuration error. Please contact support.', true);
+        return;
+      }
+    })();
+  </script>
+</body>
+</html>
