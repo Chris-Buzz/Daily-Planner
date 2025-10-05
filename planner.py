@@ -248,7 +248,7 @@ def send_email(recipient_email, subject, body):
         
     try:
         msg = MIMEMultipart('alternative')
-        msg['From'] = 'yourplanno@gmail.com'
+        msg['From'] = SMTP_USERNAME  # Use the configured email
         msg['To'] = recipient_email
         msg['Subject'] = subject
         
