@@ -1935,7 +1935,12 @@ const tasks = {
       oldTimeField.value = task.time;
     }
     
-    document.getElementById('task-day').value = task.day;
+    // Set the day checkboxes - when editing, only check the task's day
+    const dayCheckboxes = document.querySelectorAll('input[name="days"]');
+    dayCheckboxes.forEach(checkbox => {
+      checkbox.checked = checkbox.value === task.day;
+    });
+    
     document.getElementById('task-priority').value = task.priority;
     
     // Set color
@@ -5187,7 +5192,12 @@ const initEventHandlers = () => {
   elements.addTaskBtn.addEventListener('click', () => {
     state.editingTask = null;
     elements.taskForm.reset();
-    document.getElementById('task-day').value = state.currentDay;
+    
+    // Check the current day by default
+    const dayCheckboxes = document.querySelectorAll('input[name="days"]');
+    dayCheckboxes.forEach(checkbox => {
+      checkbox.checked = checkbox.value === state.currentDay;
+    });
     
     const modalHeader = elements.taskModal.querySelector('.modal-header h2');
     modalHeader.textContent = 'Create Task';
@@ -5202,6 +5212,24 @@ const initEventHandlers = () => {
     elements.addTaskBtn.click();
   });
 
+  // Select all days button - toggles between all days and current day only
+  document.getElementById('select-all-days')?.addEventListener('click', () => {
+    const dayCheckboxes = document.querySelectorAll('input[name="days"]');
+    const allChecked = Array.from(dayCheckboxes).every(checkbox => checkbox.checked);
+    
+    if (allChecked) {
+      // If all are checked, deselect all except current day
+      dayCheckboxes.forEach(checkbox => {
+        checkbox.checked = checkbox.value === state.currentDay;
+      });
+    } else {
+      // Otherwise, select all days
+      dayCheckboxes.forEach(checkbox => {
+        checkbox.checked = true;
+      });
+    }
+  });
+
   // Task form submission
   elements.taskForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -5209,6 +5237,15 @@ const initEventHandlers = () => {
     const formData = new FormData(elements.taskForm);
     const startTime = formData.get('startTime');
     const endTime = formData.get('endTime');
+    
+    // Get selected days
+    const selectedDays = Array.from(document.querySelectorAll('input[name="days"]:checked'))
+      .map(checkbox => checkbox.value);
+    
+    if (selectedDays.length === 0) {
+      ui.showNotification('Please select at least one day', 'warning');
+      return;
+    }
     
     // Provide helpful feedback for end-time-only tasks
     if (endTime && !startTime) {
@@ -5230,21 +5267,38 @@ const initEventHandlers = () => {
       startTime: startTime || '',
       endTime: endTime || '',
       time: '', // Clear the legacy time field to avoid conflicts
-      day: formData.get('day'),
       priority: formData.get('priority'),
       color: formData.get('color')
     };
     
     try {
       if (state.editingTask) {
-        await tasks.update(state.editingTask.id, taskData);
+        // When editing, update the task in its original day
+        await tasks.update(state.editingTask.id, {
+          ...taskData,
+          day: state.editingTask.day
+        });
         state.editingTask = null;
+        ui.showNotification('Task updated', 'success');
       } else {
-        await tasks.create(taskData);
+        // When creating, create task for each selected day
+        const createPromises = selectedDays.map(day => 
+          tasks.create({
+            ...taskData,
+            day: day
+          })
+        );
+        
+        await Promise.all(createPromises);
+        
+        if (selectedDays.length > 1) {
+          ui.showNotification(`Task created for ${selectedDays.length} days`, 'success');
+        } else {
+          ui.showNotification('Task created', 'success');
+        }
       }
       
-      // Immediately update UI after successful task creation/update
-      ui.setCurrentDay(taskData.day);
+      // Update UI
       tasks.render();
       ui.closeModal(elements.taskModal);
       elements.taskForm.reset();
