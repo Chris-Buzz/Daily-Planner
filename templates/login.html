@@ -18,9 +18,12 @@
       <input id="login-email" type="email" placeholder="Email address" required autocomplete="email" />
       <input id="login-password" type="password" placeholder="Password" required autocomplete="current-password" />
       
-      <div class="remember-me">
-        <input type="checkbox" id="remember-me" name="remember-me">
-        <label for="remember-me">Remember me</label>
+      <div class="form-options">
+        <div class="remember-me">
+          <input type="checkbox" id="remember-me" name="remember-me">
+          <label for="remember-me">Remember me</label>
+        </div>
+        <a href="#" id="forgot-password-link" class="forgot-password">Forgot password?</a>
       </div>
       
       <button type="submit" id="btn-login">Sign In</button>
@@ -66,9 +69,11 @@
 
     const showMessage = (message, isError = false) => {
       statusEl.innerHTML = `<div class="${isError ? 'auth-error' : 'auth-success'}">${message}</div>`;
+      // Longer timeout for password reset messages (15 seconds) so users can read them
+      const timeout = message.includes('Password reset') ? 15000 : 5000;
       setTimeout(() => {
         statusEl.innerHTML = '';
-      }, 5000);
+      }, timeout);
     };
 
     const showLoading = (show) => {
@@ -269,6 +274,58 @@
               // Sign out on error
               await auth.signOut();
             }
+          }
+        });
+
+        // Forgot Password Handler
+        document.getElementById('forgot-password-link').addEventListener('click', async (e) => {
+          e.preventDefault();
+          
+          const emailInput = document.getElementById('login-email');
+          const email = emailInput.value.trim();
+          
+          // Check if email is provided
+          if (!email) {
+            showMessage('Please enter your email address first.', true);
+            emailInput.focus();
+            return;
+          }
+          
+          // Validate email format
+          if (!validateEmail(email)) {
+            showMessage('Please enter a valid email address.', true);
+            emailInput.focus();
+            return;
+          }
+          
+          // Show loading state
+          showLoading(true);
+          
+          try {
+            // Call backend to send password reset email
+            const response = await fetch('/api/send-password-reset', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ email })
+            });
+            
+            const data = await response.json();
+            
+            showLoading(false);
+            
+            if (response.ok && data.success) {
+              showMessage(`✉️ ${data.message}`, false);
+              // Clear password field for security
+              document.getElementById('login-password').value = '';
+            } else {
+              showMessage(data.error || 'Failed to send reset email. Please try again.', true);
+            }
+          } catch (error) {
+            showLoading(false);
+            console.error('Password reset error:', error);
+            showMessage('Network error. Please check your connection and try again.', true);
           }
         });
 

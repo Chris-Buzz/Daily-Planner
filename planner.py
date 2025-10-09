@@ -7,7 +7,8 @@ import smtplib
 import jwt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from twilio.rest import Client
+# Twilio SMS removed - requires business verification
+# from twilio.rest import Client
 import os
 import uuid
 from dotenv import load_dotenv
@@ -21,6 +22,9 @@ import csv
 import re
 import google.generativeai as genai
 import logging
+from bs4 import BeautifulSoup
+from geopy.distance import geodesic
+from urllib.parse import quote_plus, urljoin
 # Configure logging for production readiness (Vercel-compatible)
 logging.basicConfig(
     level=logging.INFO,
@@ -169,21 +173,25 @@ SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
 SMTP_USERNAME = os.getenv('SMTP_USERNAME')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 
-# Twilio Configuration
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
-TWILIO_MESSAGING_SERVICE_SID = os.getenv('TWILIO_MESSAGING_SERVICE_SID')  # For short codes
-TWILIO_SHORT_CODE = os.getenv('TWILIO_SHORT_CODE')  # e.g., '22395'
+# Web Push Notifications Configuration (VAPID)
+VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
+VAPID_EMAIL = os.getenv('VAPID_EMAIL', 'mailto:yourplanno@gmail.com')
 
-# Initialize Twilio client if credentials are provided
-twilio_client = None
-if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
-    try:
-        twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        print("Twilio initialized successfully")
-    except Exception as e:
-        print(f"Twilio initialization error: {e}")
+if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
+    print("⚠️  VAPID keys not configured. Push notifications will not work.")
+    print("📝 Generate VAPID keys by running: python generate_vapid_keys.py")
+    print("   Then add VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to your .env file")
+else:
+    print("✅ VAPID keys configured for Web Push notifications")
+
+# SMS Notifications Removed
+# Twilio requires business verification for production use, which is not feasible for this app.
+# Email notifications are more reliable and easier to configure.
+# If you need SMS in the future, consider:
+# - Business verification with Twilio
+# - Alternative services like Vonage, MessageBird
+# - Email-to-SMS gateways for specific carriers
 
 # OpenWeatherMap Configuration
 OPENWEATHERMAP_API_KEY = os.getenv('OPENWEATHERMAP_API_KEY')
@@ -196,7 +204,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     try:
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+        gemini_model = genai.GenerativeModel('gemini-2.5-pro')
         print("✅ Google Gemini AI initialized successfully")
     except Exception as e:
         print(f"⚠️  Gemini initialization error: {e}")
@@ -295,102 +303,149 @@ def send_email(recipient_email, subject, body):
         print(f"Email error: {e}")
         return False
 
-def send_sms(phone_number, message):
+# SMS functionality removed - Twilio requires business verification
+# Replaced with push notifications which are free and don't require verification
+
+def send_push_notification(user_id, title, message):
     """
-    Send SMS notification using Twilio service with intelligent sender selection.
+    Send push notification to user's browser using Web Push Protocol.
     
-    Automatically selects the best sender option available (short code > messaging service > phone number)
-    for optimal delivery rates and compliance. Includes comprehensive error handling
-    and delivery status tracking.
+    Uses Web Push API to send notifications that appear even when the app is closed.
+    Requires user to have granted notification permission in their browser.
     
     Args:
-        phone_number (str): Recipient phone number in E.164 format (e.g., +1234567890)
-        message (str): SMS message content (max 160 characters recommended)
-        
+        user_id (str): The user's unique ID
+        title (str): Notification title
+        message (str): Notification message body
+    
     Returns:
-        bool: True if SMS sent successfully, False otherwise
-        
-    Notes:
-        - Requires Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        - Supports short codes, messaging services, and regular phone numbers
-        - Automatically truncates messages over 160 characters
+        bool: True if notification was sent successfully, False otherwise
     """
+    try:
+        # Check if VAPID keys are configured
+        if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
+            print("⚠️ VAPID keys not configured - push notifications disabled")
+            print("   Run: python generate_vapid_keys.py to generate keys")
+            return False
+        
+        if not db:
+            print("⚠️ Database not available for push notifications")
+            return False
+        
+        # Import pywebpush
+        try:
+            from pywebpush import webpush, WebPushException  # type: ignore
+        except ImportError:
+            print("⚠️ pywebpush not installed. Run: pip install pywebpush")
+            return False
+        
+        # Get user's push subscription from Firestore
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            print(f"⚠️ User {user_id} not found")
+            return False
+            
+        user_data = user_doc.to_dict()
+        
+        if not user_data or 'push_subscription' not in user_data:
+            print(f"⚠️ No push subscription found for user {user_id}")
+            return False
+        
+        push_subscription = user_data['push_subscription']
+        
+        # Prepare notification payload
+        notification_data = {
+            "title": title,
+            "body": message,
+            "icon": "/static/PlannerIcon.png",  # App icon
+            "badge": "/static/PlannerIcon2.png",  # Badge icon
+            "tag": f"task-notification-{int(time.time())}",
+            "requireInteraction": False,
+            "data": {
+                "url": "/",  # URL to open when clicked
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+        
+        # Send the push notification
+        try:
+            response = webpush(
+                subscription_info=push_subscription,
+                data=json.dumps(notification_data),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={
+                    "sub": VAPID_EMAIL
+                }
+            )
+            
+            print(f"🔔 Push notification sent to user {user_id}: {title}")
+            print(f"   Response: {response.status_code}")
+            return True
+            
+        except WebPushException as e:
+            print(f"❌ WebPush error for user {user_id}: {e}")
+            
+            # If subscription is invalid (410 Gone), remove it from database
+            if e.response and e.response.status_code == 410:
+                print(f"   Removing invalid subscription for user {user_id}")
+                user_ref.update({
+                    'push_subscription': firestore.DELETE_FIELD
+                })
+            
+            return False
+        
+    except Exception as e:
+        print(f"❌ Push notification error: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return False
+
+def send_sms(phone_number, message):
+    """
+    SMS notifications have been disabled.
+    
+    Twilio requires business verification for production use, which is not feasible
+    for personal productivity apps. Push notifications are used instead.
+    
+    Returns:
+        bool: Always returns False (SMS not available)
+    """
+    print("⚠️ SMS notifications are disabled. Twilio requires business verification.")
+    print("� Please use push notifications instead.")
+    return False
+
+# Removed SMS sending logic below this line
+if False:  # Legacy SMS code preserved for reference
+    """    
+    Legacy Twilio SMS code (DISABLED):
+    
     if not twilio_client:
-        print("⚠️ Twilio not configured - check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env file")
+        print("⚠️ Twilio not configured")
         return False
     
-    # Check for sender options (priority: short code > messaging service > phone number)
     sender = None
     if TWILIO_SHORT_CODE:
         sender = TWILIO_SHORT_CODE
-        print(f"📱 Using short code: {sender}")
     elif TWILIO_MESSAGING_SERVICE_SID:
-        print(f"📱 Using messaging service: {TWILIO_MESSAGING_SERVICE_SID}")
+        pass
     elif TWILIO_PHONE_NUMBER:
         sender = TWILIO_PHONE_NUMBER
-        print(f"📱 Using phone number: {sender}")
     else:
-        print("⚠️ No Twilio sender configured - need TWILIO_SHORT_CODE, TWILIO_MESSAGING_SERVICE_SID, or TWILIO_PHONE_NUMBER")
         return False
         
     try:
-        # Ensure phone number is in proper format
         if not phone_number.startswith('+'):
-            # Assume US number if no country code
             if len(phone_number) == 10 and phone_number.isdigit():
                 phone_number = f"+1{phone_number}"
             elif len(phone_number) == 11 and phone_number.startswith('1'):
                 phone_number = f"+{phone_number}"
         
-        # Truncate message to SMS limits
         if len(message) > 1600:
             message = message[:1597] + "..."
-        
-        print(f"📱 Sending SMS to {phone_number}: {message[:50]}...")
-        
-        # Create message with appropriate sender
-        if TWILIO_MESSAGING_SERVICE_SID:
-            # Use messaging service (can include short codes)
-            twilio_message = twilio_client.messages.create(
-                body=message,
-                messaging_service_sid=TWILIO_MESSAGING_SERVICE_SID,
-                to=phone_number
-            )
-        else:
-            # Use direct sender (short code or phone number)
-            twilio_message = twilio_client.messages.create(
-                body=message,
-                from_=sender,
-                to=phone_number
-            )
-        
-        sender_info = TWILIO_MESSAGING_SERVICE_SID or sender
-        print(f"✅ SMS sent successfully to {phone_number} from {sender_info} (SID: {twilio_message.sid})")
-        return True
-        
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ SMS error: {error_msg}")
-        print(f"   Phone: {phone_number}")
-        sender_info = TWILIO_MESSAGING_SERVICE_SID or sender or TWILIO_PHONE_NUMBER
-        print(f"   From: {sender_info}")
-        print(f"   Message length: {len(message)}")
-        
-        # Common SMS error troubleshooting
-        if 'not a valid phone number' in error_msg.lower():
-            print(f"   ⚠️ Invalid phone format. Expected: +1234567890, got: {phone_number}")
-        elif 'unverified' in error_msg.lower():
-            print(f"   ⚠️ Twilio trial account - verify recipient phone number in Twilio console")
-        elif 'authentication' in error_msg.lower():
-            print(f"   ⚠️ Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env file")
-        elif 'forbidden' in error_msg.lower():
-            print(f"   ⚠️ Check Twilio account permissions and phone number verification")
-        elif 'messaging service' in error_msg.lower():
-            print(f"   ⚠️ Check TWILIO_MESSAGING_SERVICE_SID is valid and active")
-        elif 'short code' in error_msg.lower():
-            print(f"   ⚠️ Short code may not be approved or active. Check Twilio console.")
-            
-        return False
+    """
+    pass  # SMS functionality disabled - see function docstring above
 
 # Global variable to track sent notifications (prevents duplicates)
 sent_notifications = {}
@@ -433,17 +488,18 @@ def format_time_12hour(time_str):
 
 def cleanup_sent_notifications():
     """
-    Clean up old notification tracking entries to prevent memory leaks.
+    Clean up old notification tracking entries to prevent memory leaks and duplicates.
+    
+    For Vercel/serverless deployments, this also syncs with Firestore to maintain
+    notification state across function invocations.
     
     Removes notification tracking entries older than 24 hours to maintain
     optimal performance and prevent duplicate notifications while keeping
     memory usage under control.
     
-    This function is called periodically by the notification system
-    to maintain a clean tracking state.
-    
     Notes:
-        - Removes entries older than 24 hours
+        - Removes in-memory entries older than 24 hours
+        - Syncs with Firestore for serverless persistence
         - Handles invalid timestamp formats gracefully
         - Logs cleanup statistics for monitoring
     """
@@ -451,6 +507,7 @@ def cleanup_sent_notifications():
         current_time = datetime.now()
         cutoff_time = current_time - timedelta(hours=24)
         
+        # Clean up in-memory cache
         keys_to_remove = []
         for key, sent_time_str in sent_notifications.items():
             try:
@@ -465,9 +522,97 @@ def cleanup_sent_notifications():
             del sent_notifications[key]
         
         if keys_to_remove:
-            print(f"🧹 Cleaned up {len(keys_to_remove)} old notification tracking entries")
+            print(f"🧹 Cleaned up {len(keys_to_remove)} old in-memory notification entries")
+        
+        # For serverless: Clean up Firestore tracking collection
+        if db:
+            try:
+                tracking_ref = db.collection('notification_tracking')
+                old_docs = tracking_ref.where('sent_at', '<', cutoff_time).limit(100).stream()
+                
+                deleted_count = 0
+                for doc in old_docs:
+                    doc.reference.delete()
+                    deleted_count += 1
+                
+                if deleted_count > 0:
+                    print(f"🧹 Cleaned up {deleted_count} old Firestore notification tracking entries")
+            except Exception as e:
+                print(f"⚠️  Error cleaning Firestore notification tracking: {e}")
+                
     except Exception as e:
         print(f"⚠️ Error during notification cleanup: {e}")
+
+
+def check_notification_sent(notification_key):
+    """
+    Check if a notification has already been sent (with Firestore persistence for serverless).
+    
+    This function checks both in-memory cache and Firestore to prevent duplicate
+    notifications across serverless function invocations.
+    
+    Args:
+        notification_key: Unique identifier for the notification
+        
+    Returns:
+        bool: True if notification was already sent, False otherwise
+    """
+    # Check in-memory cache first (fastest)
+    if notification_key in sent_notifications:
+        return True
+    
+    # For serverless: Check Firestore for persistence across invocations
+    if db:
+        try:
+            doc_ref = db.collection('notification_tracking').document(notification_key)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                doc_data = doc.to_dict()
+                sent_at = doc_data.get('sent_at')
+                
+                # Check if it's recent (within 24 hours)
+                if isinstance(sent_at, datetime):
+                    if (datetime.now() - sent_at).total_seconds() < 86400:  # 24 hours
+                        # Cache it in memory for this invocation
+                        sent_notifications[notification_key] = sent_at.isoformat()
+                        return True
+                    else:
+                        # Old entry, delete it
+                        doc_ref.delete()
+                        return False
+        except Exception as e:
+            print(f"⚠️  Error checking Firestore notification tracking: {e}")
+    
+    return False
+
+
+def mark_notification_sent(notification_key):
+    """
+    Mark a notification as sent (with Firestore persistence for serverless).
+    
+    This function records the notification in both in-memory cache and Firestore
+    to prevent duplicates across serverless function invocations.
+    
+    Args:
+        notification_key: Unique identifier for the notification
+    """
+    current_time = datetime.now()
+    
+    # Store in memory cache
+    sent_notifications[notification_key] = current_time.isoformat()
+    
+    # For serverless: Store in Firestore for persistence
+    if db:
+        try:
+            doc_ref = db.collection('notification_tracking').document(notification_key)
+            doc_ref.set({
+                'notification_key': notification_key,
+                'sent_at': current_time,
+                'created_at': current_time
+            })
+        except Exception as e:
+            print(f"⚠️  Error storing notification tracking in Firestore: {e}")
 
 def get_automatic_notification_times(tasks, current_time):
     """
@@ -511,7 +656,10 @@ def get_automatic_notification_times(tasks, current_time):
     return notification_times
 
 def check_and_send_notifications():
-    """Check for upcoming tasks and send notifications with automatic intelligent timing"""
+    """
+    Check for upcoming tasks and send notifications based on user's custom reminder times.
+    This function is designed for serverless environments (Vercel) and is triggered by cron jobs.
+    """
     if not db:
         print("⚠️ Database not available for notifications")
         return
@@ -520,21 +668,14 @@ def check_and_send_notifications():
     cleanup_sent_notifications()
         
     try:
-        print("🔔 Checking for multi-level task notifications...")
+        print("🔔 Checking for task notifications based on user's custom reminder times...")
         users_ref = db.collection('users')
         users = users_ref.where('notifications_enabled', '==', True).stream()
         
         current_time = datetime.now()
         notifications_sent = 0
-        
-        # Define notification windows (in minutes before task)
-        notification_windows = [
-            {'minutes': 1440, 'label': '1 day', 'icon': '📅', 'urgency': 'info'},      # 24 hours
-            {'minutes': 300, 'label': '5 hours', 'icon': '⏰', 'urgency': 'warning'},    # 5 hours  
-            {'minutes': 60, 'label': '1 hour', 'icon': '⏱️', 'urgency': 'warning'},      # 1 hour
-            {'minutes': 30, 'label': '30 minutes', 'icon': '🚨', 'urgency': 'urgent'},  # 30 minutes
-            {'minutes': 5, 'label': '5 minutes', 'icon': '🔥', 'urgency': 'critical'},  # 5 minutes
-        ]
+        today = current_time.strftime('%Y-%m-%d')
+        current_day = current_time.strftime('%A').lower()
         
         for user in users:
             user_data = user.to_dict()
@@ -543,253 +684,180 @@ def check_and_send_notifications():
             
             print(f"🔍 Checking notifications for user: {user_email}")
             
+            # Get user's custom reminder times (in minutes before task)
+            # Support both custom_reminder_times and reminder_times field names
+            user_reminder_times = user_data.get('custom_reminder_times') or user_data.get('reminder_times', [300, 60, 30])
+            
+            if not user_reminder_times or not isinstance(user_reminder_times, list):
+                user_reminder_times = [300, 60, 30]  # Default: 5 hours, 1 hour, 30 minutes
+                
+            print(f"📅 User's reminder times: {user_reminder_times} minutes before tasks")
+            
+            # Get notification method
+            notification_methods = user_data.get('notification_methods', [])
+            if not notification_methods:
+                # Fallback to single notification_method
+                notification_methods = [user_data.get('notification_method', 'email')]
+                
+            print(f"📬 Notification methods: {notification_methods}")
+            
+            # Get all user's tasks
             tasks_ref = db.collection('users').document(user_id).collection('tasks')
             all_tasks = list(tasks_ref.stream())
             
             print(f"📋 Found {len(all_tasks)} total tasks for {user_email}")
             
-            # Get tasks for today
-            current_day = current_time.strftime('%A').lower()
-            today_tasks = []
+            # Check each task
             for task_doc in all_tasks:
                 task_data = task_doc.to_dict()
+                
+                # Skip completed tasks
+                if task_data.get('completed', False):
+                    continue
+                
+                # Get task time
+                task_time_str = None
+                if task_data.get('startTime'):
+                    task_time_str = task_data.get('startTime')
+                elif task_data.get('time'):
+                    # Handle format like "09:00-10:00" or just "09:00"
+                    time_range = task_data.get('time', '')
+                    if '-' in time_range:
+                        task_time_str = time_range.split('-')[0].strip()
+                    else:
+                        task_time_str = time_range.strip()
+                elif task_data.get('endTime'):
+                    task_time_str = task_data.get('endTime')
+                
+                if not task_time_str:
+                    continue  # Skip tasks without time
+                
+                # Check if task is for today
                 task_day = task_data.get('day', '').lower()
+                if task_day not in [current_day, 'today', '']:
+                    continue  # Skip tasks not scheduled for today
                 
-                # Debug: print task info
-                print(f"   📝 Task: '{task_data.get('title', 'No title')}' - Day: '{task_day}' - Time: '{task_data.get('startTime') or task_data.get('time') or task_data.get('endTime', 'No time')}' - Completed: {task_data.get('completed', False)}")
-                
-                if task_day == current_day or task_day == 'today' or not task_day:
-                    today_tasks.append(task_data)
-            
-            print(f"📅 Found {len(today_tasks)} tasks for today ({current_day})")
-            
-            # Check for automatic daily preparation notifications
-            prep_notifications = get_automatic_notification_times(today_tasks, current_time)
-            for prep_type, prep_message in prep_notifications:
-                # Create unique notification key to prevent duplicates (include hour to avoid spam)
-                today_str = current_time.strftime('%Y-%m-%d')
-                hour_str = current_time.strftime('%H')
-                notification_key = f"{user_id}_{prep_type}_{today_str}_{hour_str}"
-                
-                # Skip if already sent in this hour
-                if notification_key in sent_notifications:
-                    print(f"⏭️ Skipping {prep_type} notification for {user_email} - already sent this hour")
-                    continue
-                
-                print(f"🎯 Sending {prep_type} notification to {user_email}")
-                if user_data.get('notification_method') == 'email' and user_data.get('email'):
-                    subject = f"📋 Daily Preparation - {prep_type.replace('_', ' ').title()}"
-                    body = f"""
-                    <div class="header">
-                        <h2>📋 Your Daily Preparation</h2>
-                    </div>
-                    <div class="content">
-                        <div class="inspiration">
-                            <h2 style="color: #1abc9c; font-size: 24px; margin: 20px 0;">{prep_message}</h2>
-                            <p style="margin-top: 20px; font-size: 16px;">This automatic notification helps you stay prepared for your day!</p>
-                        </div>
-                    </div>
-                    """
-                    if send_email(user_data.get('email'), subject, body):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
-                        notifications_sent += 1
-                elif user_data.get('notification_method') == 'sms' and user_data.get('phone'):
-                    if send_sms(user_data.get('phone'), prep_message[:160]):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
-                        notifications_sent += 1
-            
-            upcoming_tasks = []
-            today = current_time.strftime('%Y-%m-%d')
-            
-            print(f"⏰ Checking for upcoming tasks (current time: {current_time.strftime('%H:%M')})")
-            
-            for task_doc in all_tasks:
-                task_data = task_doc.to_dict()
-                
-                # Check if task has time and is not completed
-                if (task_data.get('startTime') or task_data.get('time') or task_data.get('endTime')) and not task_data.get('completed', False):
-                    # Parse task time - handle different time formats
-                    task_time_str = None
+                try:
+                    # Parse task time
+                    task_datetime_str = f"{today} {task_time_str}"
+                    task_time = datetime.strptime(task_datetime_str, '%Y-%m-%d %H:%M')
                     
-                    # Try different time field names
-                    if task_data.get('startTime'):
-                        task_time_str = task_data.get('startTime')
-                    elif task_data.get('time'):
-                        # Handle format like "09:00-10:00" or just "09:00"
-                        time_range = task_data.get('time', '')
-                        if '-' in time_range:
-                            task_time_str = time_range.split('-')[0].strip()
-                        else:
-                            task_time_str = time_range.strip()
-                    elif task_data.get('endTime'):
-                        # Use end time if no start time
-                        task_time_str = task_data.get('endTime')
+                    # Calculate time difference in minutes
+                    time_diff_minutes = (task_time - current_time).total_seconds() / 60
                     
-                    # Also check if this is for today or the correct day
-                    task_day = task_data.get('day', '').lower()
-                    current_day = current_time.strftime('%A').lower()
+                    # Skip if task is in the past
+                    if time_diff_minutes < 0:
+                        continue
                     
-                    # Only process tasks for today
-                    if task_time_str and (task_day == current_day or task_day == 'today' or not task_day):
-                        try:
-                            print(f"   ⏰ Processing task '{task_data.get('title')}' with time '{task_time_str}' for day '{task_day}'")
+                    print(f"   ⏰ Task: '{task_data.get('title')}' at {task_time_str} ({time_diff_minutes:.1f} min from now)")
+                    
+                    # Check if we should send notification for any of the user's reminder times
+                    for reminder_minutes in user_reminder_times:
+                        # Tolerance: ±2.5 minutes to account for cron job 5-minute intervals
+                        tolerance = 2.5
+                        
+                        if abs(time_diff_minutes - reminder_minutes) <= tolerance:
+                            # Found a match! Send notification
+                            print(f"      ✅ MATCH! Time diff {time_diff_minutes:.1f} ≈ reminder {reminder_minutes} min")
                             
-                            # Create full datetime for today with task time
-                            task_datetime_str = f"{today} {task_time_str}"
-                            task_time = datetime.strptime(task_datetime_str, '%Y-%m-%d %H:%M')
+                            # Create unique notification key to prevent duplicates
+                            # Include reminder time to allow multiple notifications per task
+                            notification_key = f"{user_id}_task_{task_doc.id}_reminder_{reminder_minutes}_{today}"
                             
-                            # Calculate time difference in minutes
-                            time_diff = (task_time - current_time).total_seconds() / 60
+                            # Check if already sent
+                            if check_notification_sent(notification_key):
+                                print(f"      ⏭️ Already sent this notification")
+                                break
                             
-                            print(f"      📊 Time diff: {time_diff:.1f} minutes (task at {task_time.strftime('%H:%M')}, now {current_time.strftime('%H:%M')})")
+                            # Format notification message
+                            task_title = task_data.get('title', 'Untitled Task')
+                            formatted_time = format_time_12hour(task_time_str)
                             
-                            # Flexible notification timing with user preferences
-                            should_notify = False
-                            notification_reason = ""
+                            # Create contextual message based on time
+                            if reminder_minutes >= 1440:  # 1 day or more
+                                hours = reminder_minutes // 60
+                                notification_title = f"📅 Task Tomorrow"
+                                notification_body = f"{task_title} is scheduled for {formatted_time} tomorrow"
+                            elif reminder_minutes >= 60:  # 1 hour or more
+                                hours = reminder_minutes // 60
+                                notification_title = f"⏰ Task in {hours} hour{'s' if hours != 1 else ''}"
+                                notification_body = f"{task_title} starts at {formatted_time}"
+                            elif reminder_minutes >= 15:  # 15-60 minutes
+                                notification_title = f"⏱️ Task in {reminder_minutes} minutes"
+                                notification_body = f"{task_title} starts at {formatted_time}"
+                            else:  # Less than 15 minutes
+                                notification_title = f"🚨 Task Starting Soon!"
+                                notification_body = f"{task_title} starts at {formatted_time}"
                             
-                            # Simplified notification strategy: only urgent reminders
-                            user_reminder_times = user_data.get('reminder_times', [])
-                            if not user_reminder_times:
-                                # Only send urgent reminders (30 min, 10 min, immediate)
-                                priority = task_data.get('priority', 'medium').lower()
-                                if priority == 'high':
-                                    user_reminder_times = [30, 10]  # 30 min, 10 min
-                                elif priority == 'medium':
-                                    user_reminder_times = [15]      # 15 min
+                            # Send via enabled notification methods
+                            notification_sent_successfully = False
+                            
+                            if 'push' in notification_methods:
+                                if send_push_notification(user_id, notification_title, notification_body):
+                                    print(f"      ✅ Push notification sent")
+                                    notification_sent_successfully = True
+                                    notifications_sent += 1
                                 else:
-                                    user_reminder_times = [10]      # 10 min only
+                                    print(f"      ❌ Failed to send push notification")
                             
-                            print(f"      📅 Using reminder times: {user_reminder_times} for priority '{task_data.get('priority', 'medium')}'")
-                            
-                            # Check against notification times with very tight tolerance
-                            for reminder_time in user_reminder_times:
-                                # Very tight tolerance: ±1 minute only to prevent spam
-                                tolerance_min = reminder_time - 1
-                                tolerance_max = reminder_time + 1
-                                print(f"         🔍 Checking if {time_diff:.1f} minutes is within {tolerance_min}-{tolerance_max} minutes (target: {reminder_time})")
+                            if 'email' in notification_methods and user_data.get('email'):
+                                # Create HTML email
+                                priority_color = {
+                                    'high': '#FF6B6B',
+                                    'medium': '#4ECDC4', 
+                                    'low': '#96CEB4'
+                                }.get(task_data.get('priority', 'medium'), '#4ECDC4')
                                 
-                                # Very tight tolerance to reduce spam
-                                if tolerance_min <= time_diff <= tolerance_max:
-                                    should_notify = True
-                                    if reminder_time <= 10:
-                                        notification_reason = f"⚠️ URGENT: Task starting in {int(time_diff)} minutes!"
-                                    elif reminder_time <= 30:
-                                        notification_reason = f"Task starting soon in {int(time_diff)} minutes"
-                                    else:
-                                        notification_reason = f"Upcoming task in {int(time_diff)} minutes"
-                                    print(f"         ✅ MATCH! Will notify: {notification_reason}")
-                                    break
+                                email_body = f"""
+                                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                                    <div style="background: linear-gradient(135deg, #1abc9c, #45B7D1); padding: 20px; color: white; text-align: center; border-radius: 10px 10px 0 0;">
+                                        <h2 style="margin: 0;">{notification_title}</h2>
+                                        <p style="margin: 10px 0 0 0;">{notification_body}</p>
+                                    </div>
+                                    <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px;">
+                                        <div style="background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid {priority_color};">
+                                            <h3 style="margin: 0 0 5px 0; color: #2c3e50;">{task_title}</h3>
+                                            <p style="margin: 0; color: #666;"><strong>⏰ Time:</strong> {formatted_time}</p>
+                                            <p style="margin: 5px 0 0 0; color: #666;"><strong>📅 Day:</strong> {task_data.get('day', 'Today')}</p>
+                                            {f'<p style="margin: 5px 0 0 0; color: #666;">{task_data.get("description", "")}</p>' if task_data.get('description') else ''}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; padding: 15px; color: #666; font-size: 12px;">
+                                        <p>Good luck with your task! 🚀</p>
+                                    </div>
+                                </div>
+                                """
+                                
+                                if send_email(user_data.get('email'), notification_title, email_body):
+                                    print(f"      ✅ Email notification sent")
+                                    notification_sent_successfully = True
+                                    notifications_sent += 1
+                                else:
+                                    print(f"      ❌ Failed to send email notification")
                             
-                            # Special case: immediate notifications (0-2 minutes)
-                            if 0 <= time_diff <= 2:
-                                should_notify = True
-                                notification_reason = f"🚨 STARTING NOW! Task begins in {int(time_diff)} minute(s)!"
+                            # Mark as sent if successful
+                            if notification_sent_successfully:
+                                mark_notification_sent(notification_key)
                             
-                            # Check if task is within our automatic notification windows
-                            if should_notify:
-                                upcoming_tasks.append({
-                                    'title': task_data.get('title', 'Untitled Task'),
-                                    'time': task_time_str,
-                                    'description': task_data.get('description', ''),
-                                    'priority': task_data.get('priority', 'medium'),
-                                    'day': task_data.get('day', 'Today'),
-                                    'notification_reason': notification_reason
-                                })
-                                print(f"⏰ Found upcoming task: {task_data.get('title')} at {task_time_str} ({notification_reason})")
-                        except ValueError as e:
-                            print(f"⚠️ Could not parse task time '{task_time_str}': {e}")
-                            continue
-            
-            if upcoming_tasks:
-                # Create more specific notification key to prevent spam (include current hour)
-                task_titles_hash = ''.join(sorted([task['title'] for task in upcoming_tasks]))
-                current_hour = current_time.strftime('%H')
-                notification_key = f"{user_id}_task_reminder_{today}_{current_hour}_{hash(task_titles_hash) % 10000}"
-                
-                if notification_key in sent_notifications:
-                    print(f"⏭️ Skipping task reminder notification for {user_email} - already sent this hour")
+                            # Only send one notification per check (prevent multiple reminders in same run)
+                            break
+                    
+                except ValueError as e:
+                    print(f"   ⚠️ Could not parse task time '{task_time_str}': {e}")
                     continue
-                
-                print(f"📤 Sending notification for {len(upcoming_tasks)} upcoming tasks to {user_email}")
-                notification_method = user_data.get('notification_method', 'email')
-                
-                if notification_method == 'email' and user_data.get('email'):
-                    subject = f"⏰ {len(upcoming_tasks)} Task(s) Coming Up!"
-                    
-                    # Create HTML email body
-                    body = f"""
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <div style="background: linear-gradient(135deg, #1abc9c, #45B7D1); padding: 20px; color: white; text-align: center; border-radius: 10px 10px 0 0;">
-                            <h2 style="margin: 0;">⏰ Upcoming Tasks Reminder</h2>
-                            <p style="margin: 10px 0 0 0;">You have {len(upcoming_tasks)} task(s) starting soon!</p>
-                        </div>
-                        <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px;">
-                    """
-                    
-                    for task in upcoming_tasks:
-                        priority_color = {
-                            'high': '#FF6B6B',
-                            'medium': '#4ECDC4', 
-                            'low': '#96CEB4'
-                        }.get(task['priority'], '#4ECDC4')
-                        
-                        formatted_time = format_time_12hour(task['time'])
-                        body += f"""
-                        <div style="background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid {priority_color};">
-                            <h3 style="margin: 0 0 5px 0; color: #2c3e50;">{task['title']}</h3>
-                            <p style="margin: 0; color: #666;"><strong>⏰ Time:</strong> {formatted_time}</p>
-                            <p style="margin: 5px 0 0 0; color: #666;"><strong>📅 Day:</strong> {task['day']}</p>
-                            {f'<p style="margin: 5px 0 0 0; color: #666;">{task["description"]}</p>' if task['description'] else ''}
-                        </div>
-                        """
-                    
-                    body += """
-                        </div>
-                        <div style="text-align: center; padding: 15px; color: #666; font-size: 12px;">
-                            <p>Good luck with your tasks! 🚀</p>
-                            <p>You can update your notification preferences in the app settings.</p>
-                        </div>
-                    </div>
-                    """
-                    
-                    if send_email(user_data.get('email'), subject, body):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
-                        notifications_sent += 1
-                        print(f"✅ Email notification sent to {user_email}")
-                    else:
-                        print(f"❌ Failed to send email to {user_email}")
-                        
-                elif notification_method == 'sms' and user_data.get('phone'):
-                    # Create SMS message (limited to 160 characters)
-                    task_titles = [task['title'] for task in upcoming_tasks[:2]]  # Limit for SMS
-                    message = f"⏰ {len(upcoming_tasks)} task(s) coming up: {', '.join(task_titles)}"
-                    
-                    if len(upcoming_tasks) > 2:
-                        message += f" +{len(upcoming_tasks) - 2} more"
-                    
-                    # Add first task time in 12-hour format
-                    if upcoming_tasks:
-                        formatted_time = format_time_12hour(upcoming_tasks[0]['time'])
-                        message += f" at {formatted_time}"
-                    
-                    if send_sms(user_data.get('phone'), message[:160]):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
-                        notifications_sent += 1
-                        print(f"✅ SMS notification sent to {user_data.get('phone')}")
-                    else:
-                        print(f"❌ Failed to send SMS to {user_data.get('phone')}")
-            else:
-                print(f"📋 No upcoming tasks found for {user_email}")
         
         if notifications_sent > 0:
-            print(f"🎯 Sent {notifications_sent} automatic intelligent notifications")
+            print(f"🎯 Sent {notifications_sent} task notifications")
         else:
-            print("📱 No automatic notifications needed at this time")
+            print("📱 No notifications needed at this time")
+            
+        return notifications_sent
             
     except Exception as e:
         print(f"❌ Error in check_and_send_notifications: {e}")
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
+        return 0
 
 def send_daily_summary():
     """Send daily summary of completed tasks"""
@@ -958,21 +1026,20 @@ def send_daily_summary():
                     else:
                         print(f"❌ Failed to send summary to {user_email}")
                         
-                elif notification_method == 'sms' and user_data.get('phone'):
-                    # SMS summary (shorter but informative)
-                    message = f"Daily Summary: Today you have {len(all_today_tasks)} tasks total. "
-                    message += f"✅ {len(completed_today)} completed, ⏳ {len(pending_tasks)} pending. "
+                elif notification_method == 'push':
+                    # Push notification summary (concise but informative)
+                    message = f"Daily Summary: {len(completed_today)} tasks completed, {len(pending_tasks)} pending. "
                     if pending_tasks:
-                        next_task = pending_tasks[0].get('title', 'Untitled')[:30]
+                        next_task = pending_tasks[0].get('title', 'Untitled')[:40]
                         message += f"Next up: {next_task}. "
-                    message += f"{random.choice(INSPIRATIONAL_MESSAGES)[:50]}..."
+                    message += random.choice(INSPIRATIONAL_MESSAGES)[:80]
                     
-                    if send_sms(user_data.get('phone'), message[:160]):
+                    if send_push_notification(user_id, "📊 Daily Summary", message):
                         sent_notifications[notification_key] = datetime.now().isoformat()
                         summaries_sent += 1
-                        print(f"✅ SMS summary sent to {user_data.get('phone')}")
+                        print(f"✅ Push summary sent to user {user_id}")
                     else:
-                        print(f"❌ Failed to send SMS summary to {user_data.get('phone')}")
+                        print(f"❌ Failed to send push summary to user {user_id}")
             else:
                 print(f"📋 No completed tasks found for {user_email}")
         
@@ -1115,41 +1182,142 @@ def analyze_user_preferences(uid):
         return {}
 
 def get_user_preferences(uid):
-    """Get stored user preferences or analyze if not available"""
+    """Get stored user preferences combining explicit preferences and historical analysis"""
     if not db:
         return {}
     
     try:
-        # Check if preferences are already stored
+        combined_preferences = {}
+        
+        # Load explicit preferences from preferences collection
         user_ref = db.collection('users').document(uid)
+        prefs_doc = user_ref.collection('preferences').document('main').get()
+        
+        if prefs_doc.exists:
+            explicit_prefs = prefs_doc.to_dict()
+            combined_preferences['explicit'] = explicit_prefs
+            print(f"✅ Loaded explicit preferences for user {uid}: {list(explicit_prefs.keys())}")
+        else:
+            combined_preferences['explicit'] = {}
+            print(f"ℹ️ No explicit preferences found for user {uid}")
+        
+        # Check if historical analysis exists and is recent
         user_doc = user_ref.get()
         
         if user_doc.exists:
             user_data = user_doc.to_dict()
-            stored_preferences = user_data.get('ai_preferences', {})
+            stored_analysis = user_data.get('ai_preferences', {})
             last_analysis = user_data.get('preferences_last_updated')
             
-            # Refresh preferences if older than 2 weeks
-            if (stored_preferences and last_analysis and 
-                isinstance(last_analysis, datetime) and 
-                (datetime.now() - last_analysis).days < 14):
-                return stored_preferences
+            # Use stored analysis if less than 2 weeks old
+            if stored_analysis and last_analysis:
+                try:
+                    # Handle Firestore DatetimeWithNanoseconds and regular datetime objects
+                    from datetime import timezone
+                    
+                    # Firestore returns timezone-aware datetimes, so make our comparison datetime aware too
+                    now_utc = datetime.now(timezone.utc)
+                    
+                    # last_analysis from Firestore is already timezone-aware
+                    # Just calculate the difference
+                    days_old = (now_utc - last_analysis).days
+                    
+                    if days_old < 14:
+                        combined_preferences.update(stored_analysis)
+                        print(f"✅ Using cached historical analysis (age: {days_old} days)")
+                        return combined_preferences
+                except Exception as e:
+                    print(f"⚠️ Error checking analysis age: {e}")
+                    # Continue to re-analyze if there's an error
         
-        # Analyze preferences and store them
-        preferences = analyze_user_preferences(uid)
+        # Analyze preferences from task history
+        historical_analysis = analyze_user_preferences(uid)
         
-        if preferences:
-            # Store preferences in user document
+        if historical_analysis:
+            # Merge historical analysis with explicit preferences
+            combined_preferences.update(historical_analysis)
+            
+            # Store historical analysis in user document
             user_ref.update({
-                'ai_preferences': preferences,
+                'ai_preferences': historical_analysis,
                 'preferences_last_updated': datetime.now()
             })
-            print(f"💾 Stored updated preferences for user {uid}")
+            print(f"💾 Stored updated historical analysis for user {uid}")
         
-        return preferences
+        return combined_preferences
         
     except Exception as e:
         print(f"❌ Error getting user preferences: {e}")
+        return {}
+
+def analyze_task_completion_patterns(uid):
+    """
+    Analyze user's task completion/deletion patterns to learn preferences.
+    Returns insights about what types of tasks the user completes vs abandons.
+    """
+    if not db:
+        return {}
+    
+    try:
+        # Get task analytics from last 30 days
+        from datetime import timedelta
+        cutoff_date = datetime.now() - timedelta(days=30)
+        
+        analytics_ref = db.collection('users').document(uid).collection('task_analytics')
+        analytics_docs = analytics_ref.where('timestamp', '>=', cutoff_date).stream()
+        
+        completed_tasks = []
+        abandoned_tasks = []
+        
+        for doc in analytics_docs:
+            data = doc.to_dict()
+            if data.get('completed'):
+                completed_tasks.append(data)
+            elif data.get('deleted') and not data.get('completed'):
+                abandoned_tasks.append(data)
+        
+        print(f"📊 Task Analytics: {len(completed_tasks)} completed, {len(abandoned_tasks)} abandoned (last 30 days)")
+        
+        # Analyze patterns
+        insights = {
+            'completed_categories': {},
+            'abandoned_categories': {},
+            'preferred_times': {},
+            'total_completed': len(completed_tasks),
+            'total_abandoned': len(abandoned_tasks),
+            'completion_rate': 0
+        }
+        
+        # Calculate completion rate
+        total = len(completed_tasks) + len(abandoned_tasks)
+        if total > 0:
+            insights['completion_rate'] = round((len(completed_tasks) / total) * 100, 1)
+        
+        # Categorize completed tasks
+        for task in completed_tasks:
+            category = task.get('category', 'other')
+            insights['completed_categories'][category] = insights['completed_categories'].get(category, 0) + 1
+            
+            # Track preferred times
+            time = task.get('time', '')
+            if time:
+                hour = time.split(':')[0] if ':' in time else ''
+                if hour:
+                    insights['preferred_times'][hour] = insights['preferred_times'].get(hour, 0) + 1
+        
+        # Categorize abandoned tasks
+        for task in abandoned_tasks:
+            category = task.get('category', 'other')
+            insights['abandoned_categories'][category] = insights['abandoned_categories'].get(category, 0) + 1
+        
+        print(f"✅ Task completion insights: {insights['completion_rate']}% completion rate")
+        print(f"   Most completed: {max(insights['completed_categories'].items(), key=lambda x: x[1]) if insights['completed_categories'] else 'N/A'}")
+        print(f"   Most abandoned: {max(insights['abandoned_categories'].items(), key=lambda x: x[1]) if insights['abandoned_categories'] else 'N/A'}")
+        
+        return insights
+        
+    except Exception as e:
+        print(f"❌ Error analyzing task patterns: {e}")
         return {}
 
 def generate_preference_context(preferences):
@@ -1159,7 +1327,53 @@ def generate_preference_context(preferences):
     
     context_parts = []
     
-    # Activity preferences
+    # Check for explicit user preferences (from preferences UI)
+    explicit_prefs = preferences.get('explicit', {})
+    
+    # Hobbies and Interests
+    if explicit_prefs.get('hobbies'):
+        hobbies = explicit_prefs['hobbies']
+        context_parts.append(f"USER HOBBIES & INTERESTS: {', '.join(hobbies)}")
+        context_parts.append(f"  → When suggesting tasks, incorporate these interests where relevant (e.g., hobby time, creative projects related to {hobbies[0] if hobbies else 'interests'})")
+    
+    # Workout Styles
+    if explicit_prefs.get('workoutStyles'):
+        workout_styles = explicit_prefs['workoutStyles']
+        context_parts.append(f"PREFERRED WORKOUT STYLES: {', '.join(workout_styles)}")
+        context_parts.append(f"  → Suggest exercise tasks that match these preferences (e.g., {workout_styles[0] if workout_styles else 'preferred'} session)")
+    
+    # Daily Schedule
+    if explicit_prefs.get('wakeTime') or explicit_prefs.get('bedTime'):
+        wake_time = explicit_prefs.get('wakeTime', '07:00')
+        bed_time = explicit_prefs.get('bedTime', '23:00')
+        context_parts.append(f"DAILY SCHEDULE: Wakes at {wake_time}, Bedtime at {bed_time}")
+        context_parts.append(f"  → Schedule tasks between {wake_time} and {bed_time}, suggest morning routines after {wake_time}")
+    
+    # Exercise Time Preference
+    if explicit_prefs.get('exerciseTime'):
+        exercise_time = explicit_prefs.get('exerciseTime', 'morning')
+        time_map = {
+            'morning': '6:00-11:00 AM',
+            'afternoon': '12:00-5:00 PM', 
+            'evening': '6:00-10:00 PM',
+            'flexible': 'any time'
+        }
+        context_parts.append(f"EXERCISE TIME PREFERENCE: {exercise_time.title()} ({time_map.get(exercise_time, 'flexible')})")
+        context_parts.append(f"  → Schedule workout tasks during {exercise_time} hours when possible")
+    
+    # Event Categories
+    if explicit_prefs.get('eventCategories'):
+        event_categories = explicit_prefs['eventCategories']
+        context_parts.append(f"FAVORITE EVENT TYPES: {', '.join(event_categories)}")
+        context_parts.append(f"  → When user asks for event suggestions or weekend plans, recommend {event_categories[0] if event_categories else 'relevant'} events")
+    
+    # Location
+    if explicit_prefs.get('location'):
+        location = explicit_prefs['location']
+        context_parts.append(f"USER LOCATION: {location}")
+        context_parts.append(f"  → Suggest local activities and events in {location} area")
+    
+    # Activity preferences (from historical analysis)
     if preferences.get('activity_types'):
         preferred_activities = []
         avoided_activities = preferences.get('avoided_activities', [])
@@ -1171,11 +1385,11 @@ def generate_preference_context(preferences):
                     preferred_activities.append(f"{activity} (completes {completion_rate:.0%})")
         
         if preferred_activities:
-            context_parts.append(f"PREFERRED ACTIVITIES: {', '.join(preferred_activities)}")
+            context_parts.append(f"HISTORICAL PREFERRED ACTIVITIES: {', '.join(preferred_activities)}")
         if avoided_activities:
             context_parts.append(f"TENDS TO AVOID: {', '.join(avoided_activities)}")
     
-    # Time preferences
+    # Time preferences (from historical analysis)
     if preferences.get('time_patterns'):
         best_times = []
         for time_slot, stats in preferences['time_patterns'].items():
@@ -1185,9 +1399,9 @@ def generate_preference_context(preferences):
                     best_times.append(f"{time_slot} (completes {completion_rate:.0%})")
         
         if best_times:
-            context_parts.append(f"MOST PRODUCTIVE TIMES: {', '.join(best_times)}")
+            context_parts.append(f"MOST PRODUCTIVE TIMES (from history): {', '.join(best_times)}")
     
-    # Day preferences
+    # Day preferences (from historical analysis)
     if preferences.get('day_preferences'):
         productive_days = []
         for day, stats in preferences['day_preferences'].items():
@@ -1197,14 +1411,16 @@ def generate_preference_context(preferences):
                     productive_days.append(f"{day} (completes {completion_rate:.0%})")
         
         if productive_days:
-            context_parts.append(f"MOST PRODUCTIVE DAYS: {', '.join(productive_days)}")
+            context_parts.append(f"MOST PRODUCTIVE DAYS (from history): {', '.join(productive_days)}")
     
-    # Interests
+    # Interests (from keyword analysis)
     if preferences.get('interests'):
-        context_parts.append(f"FREQUENT INTERESTS: {', '.join(preferences['interests'][:5])}")
+        context_parts.append(f"FREQUENT KEYWORDS: {', '.join(preferences['interests'][:5])}")
     
     if context_parts:
-        return f"\n\nUSER PREFERENCES (learned from task history):\n{chr(10).join(context_parts)}\n"
+        header = "\n\n🧠 USER PREFERENCES (Use these to personalize suggestions!):\n"
+        header += "=" * 60 + "\n"
+        return header + "\n".join(context_parts) + "\n" + "=" * 60 + "\n"
     
     return ""
 
@@ -1331,15 +1547,15 @@ def send_sporadic_inspiration():
                     else:
                         print(f"❌ Failed to send sporadic inspiration email to {user_email}")
                         
-                elif notification_method == 'sms' and user_data.get('phone'):
-                    sms_message = f"💫 Sporadic Inspiration: {message}"
+                elif notification_method == 'push':
+                    push_message = f"💫 {message}"
                     if total_today > 3:
-                        sms_message += f" You've got {total_today} tasks today - you've got this! 🏆"
+                        push_message += f" You've got {total_today} tasks today - you've got this! 🏆"
                     
-                    if send_sms(user_data.get('phone'), sms_message[:160]):
+                    if send_push_notification(user_id, "✨ Sporadic Inspiration", push_message):
                         sent_notifications[notification_key] = datetime.now().isoformat()
                         inspirations_sent += 1
-                        print(f"✅ Sporadic inspiration SMS sent to {user_data.get('phone')}")
+                        print(f"✅ Sporadic inspiration push sent to user {user_id}")
                     else:
                         print(f"❌ Failed to send sporadic inspiration SMS to {user_data.get('phone')}")
         
@@ -1526,6 +1742,38 @@ def get_weather_by_city(city):
         print(f"City weather error: {e}")
         raise Exception(str(e))
 
+def get_weather_by_zipcode(zipcode):
+    """Get weather for a specific US zipcode"""
+    if not OPENWEATHERMAP_API_KEY:
+        raise Exception("OpenWeatherMap API key not configured")
+    
+    try:
+        # Get coordinates from zipcode using OpenWeatherMap Geocoding API
+        geocoding_url = f"https://api.openweathermap.org/geo/1.0/zip"
+        geocoding_params = {
+            'zip': f"{zipcode},US",
+            'appid': OPENWEATHERMAP_API_KEY
+        }
+        
+        geo_response = requests.get(geocoding_url, params=geocoding_params, timeout=10)
+        geo_response.raise_for_status()
+        geo_data = geo_response.json()
+        
+        if not geo_data:
+            raise Exception(f"Zipcode '{zipcode}' not found")
+        
+        lat = geo_data['lat']
+        lon = geo_data['lon']
+        
+        return get_weather_by_coordinates(lat, lon)
+        
+    except requests.RequestException as e:
+        print(f"Zipcode geocoding API error: {e}")
+        raise Exception(f"Failed to find zipcode: {str(e)}")
+    except Exception as e:
+        print(f"Zipcode weather error: {e}")
+        raise Exception(str(e))
+
 def search_cities(query, limit=10):
     """Search for cities in the CSV file based on query"""
     if not query or len(query.strip()) < 2:
@@ -1622,11 +1870,17 @@ def search_cities(query, limit=10):
 
 
 
-# Start scheduler in background thread
-if db:
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-    print("Notification scheduler started")
+# ===== NOTIFICATION SCHEDULER (FOR LOCAL DEVELOPMENT ONLY) =====
+# NOTE: This background thread DOES NOT WORK on Vercel's serverless architecture!
+# For Vercel deployment, use the cron API endpoints (/api/cron/check-notifications, etc.)
+# triggered by Vercel Cron Jobs or external cron services like cron-job.org
+#
+# Uncomment below ONLY for local development/testing:
+#
+# if db and ENV != 'production':
+#     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+#     scheduler_thread.start()
+#     print("📅 Notification scheduler started (LOCAL DEVELOPMENT ONLY)")
 
 @app.route("/")
 def home():
@@ -1666,6 +1920,11 @@ def login():
 @app.route("/register")
 def register():
     return render_template("register.html")
+
+@app.route("/reset-password")
+def reset_password():
+    """Custom password reset page with Planno branding"""
+    return render_template("reset-password.html")
 
 @app.route("/privacy")
 def privacy():
@@ -1811,6 +2070,111 @@ def session_login():
         return {"error": "Invalid ID token"}, 401
 
 
+@app.route('/api/send-password-reset', methods=['POST'])
+def send_password_reset():
+    """
+    Send a password reset email to the user using Firebase Authentication.
+    
+    This endpoint triggers Firebase's built-in password reset email flow.
+    The email will be sent automatically by Firebase with a secure reset link.
+    
+    Request Body:
+        email (str): User's email address
+        
+    Returns:
+        dict: Success message if email sent
+        dict: Error message if email not found or sending failed
+        
+    HTTP Status Codes:
+        200: Password reset email sent successfully
+        400: Missing email parameter
+        500: Server error during email sending
+    """
+    data = request.json
+    email = data.get('email', '').strip()
+    
+    if not email:
+        return jsonify({'error': 'Email address is required'}), 400
+    
+    try:
+        # Verify email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        # Use Firebase REST API to send password reset email
+        # This actually triggers the email, unlike generate_password_reset_link
+        firebase_api_key = os.getenv('FIREBASE_API_KEY')
+        
+        if not firebase_api_key:
+            print("❌ FIREBASE_API_KEY not found in environment variables")
+            return jsonify({
+                'error': 'Server configuration error. Please contact support.'
+            }), 500
+        
+        print(f"🔑 Using Firebase API key: {firebase_api_key[:10]}...")
+        print(f"📧 Sending password reset email to: {email}")
+        
+        # Firebase Auth REST API endpoint for password reset
+        reset_url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={firebase_api_key}"
+        
+        payload = {
+            "requestType": "PASSWORD_RESET",
+            "email": email
+        }
+        
+        print(f"🌐 Calling Firebase REST API: {reset_url[:80]}...")
+        
+        response = requests.post(reset_url, json=payload, timeout=10)
+        
+        print(f"📬 Firebase API Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            print(f"✅ Password reset email sent successfully to {email}")
+            print(f"📨 Response: {response_data}")
+            return jsonify({
+                'success': True,
+                'message': f'Password reset email sent to {email}. Please check your inbox and spam folder.'
+            }), 200
+        else:
+            error_data = response.json()
+            error_message = error_data.get('error', {}).get('message', 'Unknown error')
+            
+            print(f"❌ Firebase password reset error: {error_message}")
+            print(f"📋 Full error response: {error_data}")
+            
+            # Handle specific Firebase errors
+            if 'EMAIL_NOT_FOUND' in error_message:
+                # For security, still return success to prevent email enumeration
+                print(f"⚠️  Password reset requested for non-existent email: {email}")
+                return jsonify({
+                    'success': True,
+                    'message': f'If an account exists for {email}, a password reset email has been sent.'
+                }), 200
+            elif 'INVALID_EMAIL' in error_message:
+                return jsonify({
+                    'error': 'Invalid email address.'
+                }), 400
+            else:
+                return jsonify({
+                    'error': 'Failed to send password reset email. Please try again later.'
+                }), 500
+        
+    except requests.RequestException as e:
+        print(f"❌ Network error sending password reset email: {e}")
+        return jsonify({
+            'error': 'Network error. Please try again later.'
+        }), 500
+        
+    except Exception as e:
+        print(f"❌ Error sending password reset email: {e}")
+        return jsonify({
+            'error': 'Failed to send password reset email. Please try again later.'
+        }), 500
+
+
 @app.route('/api/sessionStatus', methods=['GET'])
 def session_status():
     """Return 200 if server session cookie is valid, 401 otherwise."""
@@ -1851,9 +2215,15 @@ def notification_settings():
                 reminder_times = data.get('custom_reminder_times') or data.get('reminder_times', [300, 60, 30])
                 print(f"🔍 Resolved reminder_times: {reminder_times}")
                 
+                # Get notification methods array (or convert single method to array)
+                notification_methods = data.get('notification_methods', [data.get('notification_method', 'email')])
+                if not isinstance(notification_methods, list):
+                    notification_methods = [notification_methods]
+                
                 response_data = {
                     'notifications_enabled': data.get('notifications_enabled', False),
                     'notification_method': data.get('notification_method', 'email'),
+                    'notification_methods': notification_methods,  # Array of selected methods
                     'phone': data.get('phone', ''),
                     'email': data.get('email', ''),
                     'daily_summary': data.get('daily_summary', True),
@@ -1871,6 +2241,7 @@ def notification_settings():
             return jsonify({
                 'notifications_enabled': False,
                 'notification_method': 'email',
+                'notification_methods': ['email'],  # Default to email only
                 'phone': '',
                 'email': decoded_claims.get('email', ''),
                 'daily_summary': True,
@@ -1891,6 +2262,7 @@ def notification_settings():
             update_data = {
                 'notifications_enabled': settings.get('notifications_enabled', False),
                 'notification_method': settings.get('notification_method', 'email'),
+                'notification_methods': settings.get('notification_methods', [settings.get('notification_method', 'email')]),  # Array of methods
                 'phone': settings.get('phone', ''),
                 'daily_summary': settings.get('daily_summary', True),
                 'reminder_time': settings.get('reminder_time', 30),  # Legacy single time
@@ -2014,6 +2386,16 @@ def test_notification():
             if user_data.get('notification_method') == 'email' and user_data.get('email'):
                 subject = "🧪 Test Notification - Daily Planner"
                 
+                # Get current settings from user data
+                current_settings = {
+                    'email': user_data.get('email', 'Not set'),
+                    'notification_method': user_data.get('notification_method', 'email'),
+                    'reminder_minutes': user_data.get('custom_reminder_times', [30])[0] if user_data.get('custom_reminder_times') else user_data.get('reminder_time', 30),
+                    'daily_summary': user_data.get('daily_summary', True),
+                    'phone': user_data.get('phone', 'Not set'),
+                    'notification_types': user_data.get('notification_types', ['task_reminders', 'daily_summary'])
+                }
+                
                 # Create a beautiful test email
                 body = f"""
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -2024,11 +2406,11 @@ def test_notification():
                     
                     <div style="background: #f8f9fa; padding: 20px;">
                         <div style="background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #28a745;">
-                            <h3 style="margin: 0 0 10px 0; color: #2c3e50;">✅ Email Notifications Active</h3>
+                            <h3 style="margin: 0 0 10px 0; color: #2c3e50;">✅ Notifications Active</h3>
                             <p style="margin: 0; color: #666;">You'll receive notifications for:</p>
                             <ul style="color: #666; margin: 10px 0;">
-                                <li>⏰ Upcoming task reminders</li>
-                                <li>📊 Daily achievement summaries</li>
+                                <li>⏰ Task reminders {current_settings['reminder_minutes']} minutes before</li>
+                                <li>📊 Daily summaries ({'enabled' if current_settings['daily_summary'] else 'disabled'})</li>
                                 <li>💫 Motivational messages</li>
                             </ul>
                         </div>
@@ -2036,10 +2418,11 @@ def test_notification():
                         <div style="background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #17a2b8;">
                             <h3 style="margin: 0 0 10px 0; color: #2c3e50;">⚙️ Current Settings</h3>
                             <p style="margin: 0; color: #666;">
-                                <strong>Email:</strong> {user_data.get('email', 'Not set')}<br>
-                                <strong>Method:</strong> {user_data.get('notification_method', 'email').title()}<br>
-                                <strong>Reminder Time:</strong> {user_data.get('reminder_time', 30)} minutes before tasks<br>
-                                <strong>Daily Summary:</strong> {'Enabled' if user_data.get('daily_summary', True) else 'Disabled'}
+                                <strong>Email:</strong> {current_settings['email']}<br>
+                                <strong>Phone:</strong> {current_settings['phone'] if current_settings['notification_method'] == 'sms' else 'SMS not active'}<br>
+                                <strong>Method:</strong> {current_settings['notification_method'].title()}<br>
+                                <strong>Reminder Time:</strong> {current_settings['reminder_minutes']} minutes before tasks<br>
+                                <strong>Daily Summary:</strong> {'Enabled' if current_settings['daily_summary'] else 'Disabled'}
                             </p>
                         </div>
                     </div>
@@ -2062,9 +2445,10 @@ def test_notification():
                     return jsonify({"error": "Failed to send test email. Check your email configuration."}), 500
             
             elif user_data.get('notification_method') == 'sms' and user_data.get('phone'):
-                # Create SMS test message
-                message = f"🧪 Daily Planner Test: Your SMS notifications are working perfectly! "
-                message += f"You'll get reminders {user_data.get('reminder_time', 30)}min before tasks. "
+                # Create SMS test message with current settings
+                reminder_minutes = user_data.get('custom_reminder_times', [30])[0] if user_data.get('custom_reminder_times') else user_data.get('reminder_time', 30)
+                message = f"🧪 Daily Planner Test: Your SMS notifications are working! "
+                message += f"You'll get reminders {reminder_minutes}min before tasks. "
                 message += f"{random.choice(INSPIRATIONAL_MESSAGES)[:30]}... ✨"
                 
                 if send_sms(user_data.get('phone'), message[:160]):
@@ -2493,8 +2877,46 @@ def update_task(task_id):
         if not task_data:
             return {"error": "No task data provided"}, 400
         
-        # Update task in Firestore
+        # Get the existing task to compare changes
         task_ref = db.collection('users').document(uid).collection('tasks').document(task_id)
+        existing_task = task_ref.get()
+        
+        # Track task completion patterns for AI learning
+        if existing_task.exists:
+            old_task = existing_task.to_dict()
+            new_completed = task_data.get('completed', False)
+            old_completed = old_task.get('completed', False)
+            
+            # If task completion status changed, log it for learning (unless privacy mode is on)
+            if new_completed != old_completed:
+                # Check if user has privacy mode enabled
+                user_ref = db.collection('users').document(uid)
+                prefs_doc = user_ref.collection('preferences').document('main').get()
+                privacy_mode = False
+                if prefs_doc.exists:
+                    privacy_mode = prefs_doc.to_dict().get('privacyMode', False)
+                
+                # Only track if privacy mode is OFF
+                if not privacy_mode:
+                    completion_data = {
+                        'task_id': task_id,
+                        'task_title': task_data.get('title', old_task.get('title', '')),
+                        'task_category': task_data.get('category', old_task.get('category', '')),
+                        'completed': new_completed,
+                        'timestamp': datetime.now(),
+                        'date': task_data.get('date', old_task.get('date', '')),
+                        'time': task_data.get('time', old_task.get('time', '')),
+                        'description': task_data.get('description', old_task.get('description', ''))
+                    }
+                    
+                    # Store in learning analytics collection
+                    learning_ref = db.collection('users').document(uid).collection('task_analytics')
+                    learning_ref.add(completion_data)
+                    print(f"📊 Logged task completion pattern: {completion_data['task_title']} - completed: {new_completed}")
+                else:
+                    print(f"🔒 Privacy mode enabled - skipping task analytics tracking")
+        
+        # Update task in Firestore
         task_ref.update({
             **task_data,
             'updated_at': datetime.now()
@@ -2525,8 +2947,43 @@ def delete_task(task_id):
         if not db:
             return {"error": "Database not available"}, 500
         
-        # Delete task from Firestore
+        # Get task data before deleting for learning analytics
         task_ref = db.collection('users').document(uid).collection('tasks').document(task_id)
+        task_doc = task_ref.get()
+        
+        if task_doc.exists:
+            task_data = task_doc.to_dict()
+            
+            # Check if user has privacy mode enabled
+            user_ref = db.collection('users').document(uid)
+            prefs_doc = user_ref.collection('preferences').document('main').get()
+            privacy_mode = False
+            if prefs_doc.exists:
+                privacy_mode = prefs_doc.to_dict().get('privacyMode', False)
+            
+            # Only track deletion if privacy mode is OFF
+            if not privacy_mode:
+                # Log deleted task (likely abandoned/not wanted)
+                deletion_data = {
+                    'task_id': task_id,
+                    'task_title': task_data.get('title', ''),
+                    'task_category': task_data.get('category', ''),
+                    'deleted': True,
+                    'completed': task_data.get('completed', False),
+                    'timestamp': datetime.now(),
+                    'date': task_data.get('date', ''),
+                    'time': task_data.get('time', ''),
+                    'description': task_data.get('description', '')
+                }
+                
+                # Store in learning analytics
+                learning_ref = db.collection('users').document(uid).collection('task_analytics')
+                learning_ref.add(deletion_data)
+                print(f"📊 Logged task deletion: {deletion_data['task_title']} - was completed: {deletion_data['completed']}")
+            else:
+                print(f"🔒 Privacy mode enabled - skipping task deletion analytics")
+        
+        # Delete task from Firestore
         task_ref.delete()
         
         print(f"✅ Task deleted from Firestore: {task_id} for user {uid}")
@@ -2698,7 +3155,7 @@ def get_weather():
 
 @app.route("/api/weather/city/<city>", methods=["GET"])
 def get_weather_for_city(city):
-    """Get weather for a specific city"""
+    """Get weather for a specific city or zipcode"""
     session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_cookie:
         return {"error": "Not authenticated"}, 401
@@ -2706,8 +3163,13 @@ def get_weather_for_city(city):
     try:
         decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
         
-        # Get weather data for specified city
-        weather_data = get_weather_by_city(city)
+        # Check if input is a zipcode (5 digits) or city name
+        if city.isdigit() and len(city) == 5:
+            # It's a US zipcode
+            weather_data = get_weather_by_zipcode(city)
+        else:
+            # It's a city name
+            weather_data = get_weather_by_city(city)
         
         return jsonify(weather_data)
     
@@ -2834,6 +3296,91 @@ def user_settings():
         print(f"❌ User settings error: {e}")
         return {"error": str(e)}, 500
 
+@app.route("/api/push-subscription", methods=["POST", "DELETE"])
+def push_subscription():
+    """Save or remove push notification subscription"""
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_cookie:
+        return {"error": "Not authenticated"}, 401
+    
+    try:
+        decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
+        uid = decoded_claims['uid']
+        
+        if request.method == "POST":
+            # Save push subscription
+            data = request.get_json()
+            if not data or 'subscription' not in data:
+                return {"error": "No subscription data provided"}, 400
+            
+            subscription = data['subscription']
+            
+            # Validate subscription has required fields
+            required_fields = ['endpoint', 'keys']
+            if not all(field in subscription for field in required_fields):
+                return {"error": "Invalid subscription format"}, 400
+            
+            if 'keys' in subscription:
+                required_keys = ['p256dh', 'auth']
+                if not all(key in subscription['keys'] for key in required_keys):
+                    return {"error": "Invalid subscription keys"}, 400
+            
+            try:
+                user_ref = db.collection('users').document(uid)
+                
+                # Save subscription to user document
+                user_ref.set({
+                    'push_subscription': subscription,
+                    'push_subscription_updated_at': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+                
+                print(f"✅ Saved push subscription for user {uid}")
+                print(f"   Endpoint: {subscription.get('endpoint', 'N/A')[:50]}...")
+                
+                return jsonify({
+                    "status": "success",
+                    "message": "Push subscription saved successfully"
+                })
+                
+            except Exception as e:
+                print(f"❌ Error saving push subscription: {e}")
+                return {"error": f"Failed to save subscription: {str(e)}"}, 500
+        
+        elif request.method == "DELETE":
+            # Remove push subscription
+            try:
+                user_ref = db.collection('users').document(uid)
+                
+                # Remove subscription from user document
+                user_ref.update({
+                    'push_subscription': firestore.DELETE_FIELD
+                })
+                
+                print(f"✅ Removed push subscription for user {uid}")
+                
+                return jsonify({
+                    "status": "success",
+                    "message": "Push subscription removed successfully"
+                })
+                
+            except Exception as e:
+                print(f"❌ Error removing push subscription: {e}")
+                return {"error": f"Failed to remove subscription: {str(e)}"}, 500
+    
+    except Exception as e:
+        print(f"❌ Push subscription error: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/api/vapid-public-key", methods=["GET"])
+def get_vapid_public_key():
+    """Get VAPID public key for push notifications"""
+    if not VAPID_PUBLIC_KEY:
+        return {"error": "VAPID not configured"}, 503
+    
+    return jsonify({
+        "publicKey": VAPID_PUBLIC_KEY
+    })
+
 @app.route("/health")
 def health_check():
     """Health check endpoint for monitoring and load balancers"""
@@ -2845,7 +3392,7 @@ def health_check():
         services = {
             "database": db_status,
             "email": "configured" if SMTP_USERNAME and SMTP_PASSWORD else "not_configured",
-            "sms": "configured" if twilio_client else "not_configured",
+            "push": "available",  # Push notifications available through Web Push API
             "weather": "configured" if OPENWEATHERMAP_API_KEY else "not_configured", 
             "ai": "configured" if gemini_model else "not_configured"
         }
@@ -2868,6 +3415,204 @@ def health_check():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }), 503
+
+def _format_event_recommendations(recommendations_data):
+    """Format event AND place recommendations for assistant context"""
+    if not recommendations_data:
+        return "No event or place recommendations currently available. User can set preferences in AI Preferences tab to get personalized suggestions."
+    
+    # Handle both old format (just events array) and new format (dict with places/events)
+    if isinstance(recommendations_data, list):
+        # Old format - just events
+        events = recommendations_data
+        places = []
+    else:
+        # New format - dict with separate arrays
+        events = recommendations_data.get('events', [])
+        places = recommendations_data.get('places', [])
+    
+    total_items = len(events) + len(places)
+    if total_items == 0:
+        return "No event or place recommendations currently available. User can set preferences in AI Preferences tab to get personalized suggestions."
+    
+    recommendations_text = f"The user has {total_items} recommended items in their '🎯 For You' tab:\n\n"
+    
+    # Format Places
+    if places:
+        recommendations_text += f"📍 NEARBY PLACES ({len(places)} recommendations):\n"
+        for i, place in enumerate(places[:10], 1):  # Limit to top 10
+            recommendations_text += f"{i}. {place.get('icon', '📍')} {place.get('title', 'Unknown Place')}\n"
+            recommendations_text += f"   - Category: {place.get('category', 'N/A')}\n"
+            if place.get('distance') and place.get('distance') != 'N/A':
+                recommendations_text += f"   - Distance: {place.get('distance')} miles away\n"
+            if place.get('rating') and place.get('rating') != 'N/A':
+                recommendations_text += f"   - Rating: {place.get('rating')} stars\n"
+            if place.get('price'):
+                recommendations_text += f"   - Price Range: {place.get('price')}\n"
+            if place.get('venue'):
+                recommendations_text += f"   - Address: {place.get('venue')}\n"
+            if place.get('dog_friendly'):
+                recommendations_text += f"   - 🐕 Dog-Friendly!\n"
+            if place.get('date'):
+                recommendations_text += f"   - Status: {place.get('date')}\n"
+            recommendations_text += "\n"
+        
+        recommendations_text += "\n"
+    
+    # Format Events
+    if events:
+        recommendations_text += f"🎉 UPCOMING EVENTS ({len(events)} recommendations):\n"
+        for i, event in enumerate(events[:10], 1):  # Limit to top 10
+            recommendations_text += f"{i}. {event.get('icon', '🎉')} {event.get('title', 'Unknown Event')}\n"
+            recommendations_text += f"   - Category: {event.get('category', 'N/A')}\n"
+            recommendations_text += f"   - Date: {event.get('date', 'N/A')}"
+            if event.get('time') and event.get('time') not in ['N/A', 'See website', 'Check website']:
+                recommendations_text += f" at {event.get('time')}\n"
+            else:
+                recommendations_text += "\n"
+            recommendations_text += f"   - Venue: {event.get('venue', 'N/A')}\n"
+            if event.get('distance') and event.get('distance') not in ['N/A', 'Online']:
+                recommendations_text += f"   - Distance: {event.get('distance')} miles away\n"
+            if event.get('price'):
+                recommendations_text += f"   - Price: {event.get('price')}\n"
+            if event.get('description'):
+                desc = event.get('description')[:100]
+                recommendations_text += f"   - Details: {desc}{'...' if len(event.get('description', '')) > 100 else ''}\n"
+            if event.get('is_online'):
+                recommendations_text += f"   - 💻 Virtual/Online Event\n"
+            recommendations_text += "\n"
+    
+    recommendations_text += """
+IMPORTANT USAGE INSTRUCTIONS:
+When user asks about:
+- "what should I do?" / "where should I eat?" / "things to do nearby" → Suggest places (restaurants, parks, cafes, etc.)
+- "events nearby" / "concerts" / "shows" / "things happening" → Suggest events
+- "dog-friendly restaurants" → Highlight places with 🐕 marker
+- "weekend plans" → Suggest mix of places AND events
+- "where can I go?" → Suggest nearby places based on their interests
+
+TASK CREATION FROM RECOMMENDATIONS:
+- When user expresses interest, offer to add as a task to their planner
+- Use EXACT details from recommendations (time, venue, address)
+- Set appropriate time blocks (2-3 hours for events, 1-2 hours for dining/activities)
+- Examples:
+  * "I see Blue Note Jazz Club is only 3 miles away with live music tonight at 8 PM. Want me to add 'Jazz Night at Blue Note' to your schedule?"
+  * "There's a great dog-friendly restaurant called The Patio nearby - perfect for lunch with your pup! Should I schedule that?"
+  * "The Knicks game is this Saturday at 7 PM - want me to block out time for that in your planner?"
+
+NATURAL CONVERSATION:
+- Mention recommendations naturally when relevant to user's question
+- Combine multiple recommendations when helpful
+- Consider user's location and preferences when suggesting
+- Always mention distance for nearby places ("only 2 miles away!")
+- Highlight special features (dog-friendly, high ratings, free events, etc.)
+"""
+    
+    return recommendations_text
+
+def get_assistant_recommendations(user_preferences, user_message_lower):
+    """Get live recommendations for assistant based on user message"""
+    try:
+        print(f"🔍 DEBUG: Checking user message: '{user_message_lower}'")
+        
+        # Check if user is asking about places/recommendations
+        place_keywords = ['restaurant', 'eat', 'food', 'dining', 'place', 'where', 'go', 'do', 'park', 'cafe', 'coffee', 'shop', 'activity', 'fun', 'entertainment', 'dog-friendly', 'dog friendly', 'pet-friendly', 'basketball', 'sport', 'gym', 'workout', 'museum', 'art', 'theater', 'bar', 'drink', 'nightlife', 'music', 'event', 'concert', 'show', 'festival', 'near', 'nearby', 'around', 'local', 'golf', 'court', 'field']
+        
+        asks_for_places = any(keyword in user_message_lower for keyword in place_keywords)
+        print(f"🔍 DEBUG: asks_for_places = {asks_for_places}")
+        
+        if not asks_for_places:
+            print(f"🔍 DEBUG: Not asking for places, returning None")
+            return None
+            
+        print(f"🔍 User asking about places, fetching live recommendations...")
+        
+        # Get user location from preferences
+        location = user_preferences.get('location', 'Monmouth County, NJ')
+        radius = user_preferences.get('maxTravelDistance', 10)
+        print(f"🔍 DEBUG: location={location}, radius={radius}")
+        
+        # Check for specific queries and use Google Places API directly
+        specific_query = None
+        
+        # RESTAURANTS & FOOD
+        if any(keyword in user_message_lower for keyword in ['restaurant', 'eat', 'dining', 'food', 'dinner', 'lunch', 'breakfast']):
+            # Check for dog-friendly first
+            if any(keyword in user_message_lower for keyword in ['dog friendly', 'dog-friendly', 'with my dog', 'bring my dog', 'pet friendly', 'pet-friendly']):
+                specific_query = f'dog-friendly restaurant near {location}'
+                print(f"🐕 Detected dog-friendly restaurant query")
+            else:
+                specific_query = f'restaurant near {location}'
+                print(f"🍽️ Detected general restaurant query")
+        
+        # Dog-friendly queries (non-restaurant)
+        elif any(keyword in user_message_lower for keyword in ['dog friendly', 'dog-friendly', 'with my dog', 'bring my dog', 'pet friendly', 'pet-friendly']):
+            if any(keyword in user_message_lower for keyword in ['park', 'outdoor']):
+                specific_query = f'dog park near {location}'
+                print(f"🐕 Detected dog park query")
+            else:
+                specific_query = f'dog-friendly places near {location}'
+                print(f"🐕 Detected general dog-friendly query")
+        
+        # Sports facilities
+        elif any(keyword in user_message_lower for keyword in ['basketball court', 'basketball', 'play basketball']):
+            specific_query = f'basketball court near {location}'
+            print(f"🏀 Detected basketball court query")
+        elif any(keyword in user_message_lower for keyword in ['golf course', 'golf', 'play golf', 'golfing']):
+            specific_query = f'golf course near {location}'
+            print(f"⛳ Detected golf course query")
+        elif any(keyword in user_message_lower for keyword in ['tennis court', 'tennis', 'play tennis']):
+            specific_query = f'tennis court near {location}'
+            print(f"🎾 Detected tennis court query")
+        elif any(keyword in user_message_lower for keyword in ['gym', 'fitness', 'workout', 'exercise']):
+            specific_query = f'gym near {location}'
+            print(f"💪 Detected gym query")
+        
+        # Specific cuisine or place types
+        elif 'coffee' in user_message_lower or 'cafe' in user_message_lower:
+            specific_query = f'cafe near {location}'
+            print(f"☕ Detected cafe query")
+        elif 'bar' in user_message_lower or 'drink' in user_message_lower:
+            specific_query = f'bar near {location}'
+            print(f"🍺 Detected bar query")
+        elif 'museum' in user_message_lower:
+            specific_query = f'museum near {location}'
+            print(f"🏛️ Detected museum query")
+        elif 'park' in user_message_lower:
+            specific_query = f'park near {location}'
+            print(f"🌳 Detected park query")
+        
+        # If we detected a specific query, use Google Places API directly
+        if specific_query:
+            print(f"🎯 Running specific query: {specific_query}")
+            places = get_google_places_nearby(location, radius, max_results=10, user_preferences=user_preferences, custom_query=specific_query)
+            
+            return {
+                'places': places[:8],
+                'events': []
+            }
+        
+        # Otherwise, fetch general recommendations
+        all_recommendations = get_all_recommendations(
+            location=location,
+            radius_miles=radius,
+            max_results=20,
+            user_preferences=user_preferences
+        )
+        
+        places = all_recommendations.get('places', [])
+        events = all_recommendations.get('events', [])
+        
+        print(f"🔍 DEBUG: Got {len(places)} places and {len(events)} events")
+        
+        return {
+            'places': places[:8],  # Top 8 places
+            'events': events[:5]   # Top 5 events
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting assistant recommendations: {e}")
+        return None
 
 @app.route("/api/assistant", methods=["POST"])
 def planning_assistant():
@@ -2923,6 +3668,41 @@ def planning_assistant():
         preference_context = generate_preference_context(user_preferences)
         print(f"🧠 Using {'learned' if user_preferences else 'no'} preferences for personalization")
         
+        # Get task completion patterns for AI learning
+        task_insights = analyze_task_completion_patterns(uid)
+        learning_context = ""
+        if task_insights and task_insights.get('total_completed', 0) > 0:
+            learning_context = f"""
+
+📊 USER TASK COMPLETION INSIGHTS (Learn from user's habits):
+- Overall completion rate: {task_insights.get('completion_rate', 0)}%
+- Total completed (30 days): {task_insights.get('total_completed', 0)}
+- Total abandoned (30 days): {task_insights.get('total_abandoned', 0)}
+"""
+            # Most completed categories
+            if task_insights.get('completed_categories'):
+                top_completed = sorted(task_insights['completed_categories'].items(), key=lambda x: x[1], reverse=True)[:3]
+                learning_context += f"- Categories user COMPLETES most: {', '.join([f'{cat} ({count})' for cat, count in top_completed])}\n"
+                learning_context += f"  → Suggest more tasks in these categories - user enjoys them!\n"
+            
+            # Most abandoned categories
+            if task_insights.get('abandoned_categories'):
+                top_abandoned = sorted(task_insights['abandoned_categories'].items(), key=lambda x: x[1], reverse=True)[:3]
+                learning_context += f"- Categories user ABANDONS most: {', '.join([f'{cat} ({count})' for cat, count in top_abandoned])}\n"
+                learning_context += f"  → Avoid suggesting too many tasks in these categories - user may not enjoy them\n"
+            
+            # Preferred times
+            if task_insights.get('preferred_times'):
+                top_times = sorted(task_insights['preferred_times'].items(), key=lambda x: x[1], reverse=True)[:3]
+                learning_context += f"- Times user completes tasks most: {', '.join([f'{time}:00 ({count} tasks)' for time, count in top_times])}\n"
+                learning_context += f"  → Schedule important tasks during these peak productivity hours\n"
+            
+            learning_context += "\nUSE THIS DATA TO:\n"
+            learning_context += "- Suggest activities user actually completes, not ones they abandon\n"
+            learning_context += "- Schedule tasks at times when user is most productive\n"
+            learning_context += "- Avoid over-suggesting categories user consistently abandons\n"
+            learning_context += "- Build trust by showing you understand their habits and preferences\n"
+        
         # Get weather information from context
         weather_info = context.get('weather')
         weather_context = ""
@@ -2965,6 +3745,81 @@ Weather Status: No weather data currently available
             for msg in conversation_history[-6:]:  # Show last 6 messages for context
                 sender = "User" if msg['sender'] == 'user' else "Assistant"
                 conversation_context += f"- {sender}: {msg['message'][:100]}{'...' if len(msg['message']) > 100 else ''}\n"
+        
+        # Get live recommendations for the assistant
+        live_recommendations = get_assistant_recommendations(user_preferences, user_message.lower())
+        recommendations_text = ""
+        
+        if live_recommendations:
+            places = live_recommendations.get('places', [])
+            events = live_recommendations.get('events', [])
+            
+            if places or events:
+                recommendations_text = "\n\n"
+                
+                if places:
+                    recommendations_text += f"📍 NEARBY PLACES ({len(places)} recommendations):\n"
+                    for i, place in enumerate(places, 1):
+                        recommendations_text += f"{i}. {place.get('icon', '📍')} {place.get('title', 'Unknown Place')}\n"
+                        if place.get('rating'):
+                            recommendations_text += f"   - Rating: {place.get('rating')} stars\n"
+                        if place.get('price_level'):
+                            recommendations_text += f"   - Price: {place.get('price_level')}\n"
+                        if place.get('venue'):
+                            recommendations_text += f"   - Address: {place.get('venue')}\n"
+                        if place.get('distance'):
+                            recommendations_text += f"   - Distance: {place.get('distance')} miles away\n"
+                        if place.get('dog_friendly'):
+                            recommendations_text += f"   - 🐕 Dog-Friendly!\n"
+                        recommendations_text += "\n"
+                    recommendations_text += "\n"
+                
+                if events:
+                    recommendations_text += f"🎉 NEARBY EVENTS ({len(events)} recommendations):\n"
+                    for i, event in enumerate(events, 1):
+                        recommendations_text += f"{i}. {event.get('icon', '🎉')} {event.get('title', 'Unknown Event')}\n"
+                        recommendations_text += f"   - Date: {event.get('date', 'N/A')}\n"
+                        if event.get('time') and event.get('time') not in ['N/A', 'See website', 'Check website']:
+                            recommendations_text += f"   - Time: {event.get('time')}\n"
+                        recommendations_text += f"   - Venue: {event.get('venue', 'N/A')}\n"
+                        if event.get('distance') and event.get('distance') not in ['N/A', 'Online']:
+                            recommendations_text += f"   - Distance: {event.get('distance')} miles away\n"
+                        recommendations_text += "\n"
+                
+                recommendations_text += """
+IMPORTANT: When user asks about restaurants, places to go, things to do, etc.:
+1. USE THE LIVE RECOMMENDATIONS ABOVE to suggest SPECIFIC places with REAL details
+2. Instead of saying "search on Google Maps or Yelp", recommend actual places from the list
+3. Mention specific details like ratings, distance, and special features (dog-friendly, etc.)
+4. Offer to add recommended places to their schedule as tasks
+5. Examples:
+   - "I found The Ocean House restaurant just 2.3 miles away with 4.5 stars - perfect for dinner! Should I add it to your schedule?"
+   - "There's a dog-friendly park called Huber Woods only 1.8 miles from you - great for your pup! Want me to schedule a visit?"
+   - "Blue Note Jazz Club has live music tonight at 8 PM, only 3 miles away. Interested?"
+
+"""
+            else:
+                recommendations_text = f"""
+
+NO CURRENT RECOMMENDATIONS AVAILABLE
+
+When user asks about places/restaurants:
+- Acknowledge you can't search for specific places right now  
+- Suggest they check Google Maps or Yelp for "{user_preferences.get('location', 'your area')}"
+- Offer to help plan once they find a place
+
+"""
+        else:
+            recommendations_text = f"""
+
+NO CURRENT RECOMMENDATIONS AVAILABLE
+
+When user asks about places/restaurants:
+- Acknowledge you can't search for specific places right now  
+- Suggest they check Google Maps or Yelp for "{user_preferences.get('location', 'your area')}"
+- Offer to help plan once they find a place
+
+"""
         
         # Create context-aware prompt
         system_prompt = f"""You are a helpful daily planning assistant that can both provide advice AND create comprehensive tasks directly in the user's planner. You can also MANAGE EXISTING TASKS by editing, deleting, or completing them.
@@ -3084,7 +3939,12 @@ TASK TARGETING TIPS:
 - Each task has an ID and title. When possible, use taskId for precise targeting
 - When user says "delete the meeting task", look for task with "meeting" in title
 - For tasks listed above, you can use their exact IDs for precise actions
-- Be careful with title searches - make them specific to avoid deleting wrong tasks{weather_context}{conversation_context}
+- Be careful with title searches - make them specific to avoid deleting wrong tasks{weather_context}
+
+LIVE RECOMMENDATIONS FOR YOU:
+{recommendations_text}
+
+{conversation_context}
 
 AUTOMATIC TASK CREATION:
 You MUST create tasks when users ask for:
@@ -3181,7 +4041,45 @@ Guidelines:
 - Always include time ranges for better scheduling
 - Make daily plans simple and achievable
 - When planning ahead: spread tasks logically across future weeks (use weekOffset 1, 2, etc.)
-- Always respond to "plan ahead" requests with tasks for future weeks, not just current week{preference_context}
+- Always respond to "plan ahead" requests with tasks for future weeks, not just current week
+
+PROACTIVE PREFERENCE-BASED SUGGESTIONS:
+When creating tasks or responding to planning requests, ALWAYS incorporate user preferences:
+1. If user has hobbies listed → Suggest hobby-related tasks (e.g., "Guitar practice session", "Photography walk")
+2. If user has workout preferences → Schedule workouts at their preferred time with their preferred style
+3. If user has wake/bed times → Respect their schedule boundaries, suggest morning routines
+4. If user has event interests → Mention relevant upcoming events when suggesting weekend/evening plans
+5. When user asks "what should I do today/this week?" → Create tasks that align with their interests
+
+EVENT & ACTIVITY RECOMMENDATIONS:
+When user asks about events, weekend plans, or "what's happening":
+- Reference their favorite event categories (concerts, sports, etc.)
+- Mention their location for local events
+- Suggest creating tasks to attend events that match their interests
+- Format event suggestions as: "There's a [EVENT TYPE] happening on [DAY] at [TIME] in [LOCATION] - want me to add it to your planner?"
+
+EXAMPLE PREFERENCE-BASED RESPONSES:
+User: "Help me plan my weekend"
+→ "I see you enjoy basketball and concerts! How about:
+   - Saturday morning: Basketball practice (9:00-10:30 AM)
+   - Saturday evening: Check out that live music event downtown (8:00-10:00 PM)
+   - Sunday afternoon: Relaxing guitar practice session (2:00-3:30 PM)
+   Would you like me to add these to your planner?"
+
+User: "What should I do tomorrow?"
+→ "Based on your preferences, I'd suggest:
+   - Morning yoga session at 7:00 AM (your preferred exercise time!)
+   - Photography walk in the park at 4:00 PM (nice weather expected)
+   - Evening concert at the civic center at 8:00 PM
+   Want me to schedule these?"
+
+TASK SUGGESTIONS WHEN USER HAS PREFERENCES:
+- Always mention WHY you're suggesting something (e.g., "Since you enjoy yoga...")
+- Align workout times with their exerciseTime preference
+- Schedule hobby time during their most productive hours
+- Suggest local events based on their location
+- Create variety while respecting their interests{preference_context}
+{learning_context}
 
 User Question: {user_message}"""
 
@@ -3472,6 +4370,1744 @@ def api_cleanup_tasks():
         return jsonify({'error': 'Cleanup failed'}), 500
 
 
+# ===== AI PREFERENCES & RECOMMENDATIONS API =====
+
+@app.route("/api/preferences", methods=["GET", "POST", "DELETE"])
+def user_preferences():
+    """
+    Manage user preferences for AI learning and recommendations.
+    
+    GET: Retrieve user's saved preferences
+    POST: Save/update user preferences
+    DELETE: Clear user preferences
+    
+    Preferences include:
+    - Hobbies and interests
+    - Workout styles and exercise preferences
+    - Wake/sleep schedule
+    - Favorite event categories
+    - Activity types and frequency
+    """
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_cookie:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
+        uid = decoded_claims['uid']
+        
+        if request.method == "GET":
+            # Retrieve preferences
+            user_ref = db.collection('users').document(uid)
+            prefs_doc = user_ref.collection('preferences').document('main').get()
+            
+            if prefs_doc.exists:
+                return jsonify({
+                    'success': True,
+                    'preferences': prefs_doc.to_dict()
+                })
+            else:
+                # Return default empty preferences with enhanced fields
+                return jsonify({
+                    'success': True,
+                    'preferences': {
+                        # Privacy setting
+                        'privacyMode': False,
+                        
+                        # Basic preferences
+                        'hobbies': [],
+                        'workoutStyles': [],
+                        'wakeTime': '07:00',
+                        'bedTime': '23:00',
+                        'exerciseTime': 'morning',
+                        'eventCategories': [],
+                        'activityTypes': [],
+                        'location': '',
+                        
+                        # NEW: Pet information
+                        'hasDog': False,
+                        'hasCat': False,
+                        'otherPets': [],
+                        
+                        # NEW: Food preferences
+                        'cuisineTypes': [],
+                        'dietaryRestrictions': [],
+                        'priceRange': 'moderate',
+                        'preferredMealTimes': {
+                            'breakfast': True,
+                            'brunch': True,
+                            'lunch': True,
+                            'dinner': True,
+                            'lateNight': False
+                        },
+                        
+                        # NEW: Activity preferences
+                        'indoorActivities': [],
+                        'outdoorActivities': [],
+                        'socialPreference': 'small-groups',
+                        'eventTypes': [],
+                        
+                        # NEW: Lifestyle
+                        'workSchedule': '9-5',
+                        'transportationMode': 'car',
+                        'maxTravelDistance': 10,
+                        
+                        'createdAt': None
+                    }
+                })
+        
+        elif request.method == "POST":
+            # Save/update preferences
+            data = request.get_json()
+            
+            from datetime import datetime
+            
+            preferences = {
+                # Privacy setting
+                'privacyMode': data.get('privacyMode', False),
+                
+                # Basic preferences
+                'hobbies': data.get('hobbies', []),
+                'workoutStyles': data.get('workoutStyles', []),
+                'wakeTime': data.get('wakeTime', '07:00'),
+                'bedTime': data.get('bedTime', '23:00'),
+                'exerciseTime': data.get('exerciseTime', 'morning'),
+                'eventCategories': data.get('eventCategories', []),
+                'activityTypes': data.get('activityTypes', []),
+                'location': data.get('location', ''),
+                
+                # NEW: Pet information
+                'hasDog': data.get('hasDog', False),
+                'hasCat': data.get('hasCat', False),
+                'otherPets': data.get('otherPets', []),
+                
+                # NEW: Food preferences
+                'cuisineTypes': data.get('cuisineTypes', []),
+                'dietaryRestrictions': data.get('dietaryRestrictions', []),
+                'priceRange': data.get('priceRange', 'moderate'),
+                'preferredMealTimes': data.get('preferredMealTimes', {
+                    'breakfast': True,
+                    'brunch': True,
+                    'lunch': True,
+                    'dinner': True,
+                    'lateNight': False
+                }),
+                
+                # NEW: Activity preferences  
+                'indoorActivities': data.get('indoorActivities', []),
+                'outdoorActivities': data.get('outdoorActivities', []),
+                'socialPreference': data.get('socialPreference', 'small-groups'),
+                'eventTypes': data.get('eventTypes', []),
+                
+                # NEW: Lifestyle
+                'workSchedule': data.get('workSchedule', '9-5'),
+                'transportationMode': data.get('transportationMode', 'car'),
+                'maxTravelDistance': data.get('maxTravelDistance', 10),
+                
+                'updatedAt': datetime.now().isoformat()
+            }
+            
+            # Save to Firebase (use SERVER_TIMESTAMP for Firebase, not for JSON response)
+            firebase_preferences = preferences.copy()
+            firebase_preferences['updatedAt'] = firestore.SERVER_TIMESTAMP
+            
+            user_ref = db.collection('users').document(uid)
+            user_ref.collection('preferences').document('main').set(firebase_preferences, merge=True)
+            
+            # Return serializable preferences
+            return jsonify({
+                'success': True,
+                'message': 'Preferences saved successfully',
+                'preferences': preferences
+            })
+        
+        elif request.method == "DELETE":
+            # Clear preferences
+            user_ref = db.collection('users').document(uid)
+            user_ref.collection('preferences').document('main').delete()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Preferences cleared'
+            })
+    
+    except Exception as e:
+        print(f"❌ Preferences error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/autofill-preferences", methods=["POST"])
+def autofill_preferences():
+    """
+    Analyze user's past tasks and automatically populate preferences
+    using AI to extract hobbies, workout styles, and activity patterns
+    """
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_cookie:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
+        uid = decoded_claims['uid']
+        
+        if not db:
+            return jsonify({'error': 'Database not available'}), 500
+        
+        if not gemini_model:
+            return jsonify({'error': 'AI service unavailable'}), 503
+        
+        # Get user's tasks from Firestore
+        tasks_ref = db.collection('users').document(uid).collection('tasks')
+        all_tasks = list(tasks_ref.stream())
+        
+        if len(all_tasks) < 5:
+            return jsonify({
+                'success': False,
+                'message': f'Need at least 5 tasks to analyze patterns. You have {len(all_tasks)}.'
+            })
+        
+        # Extract task titles and descriptions
+        task_data = []
+        for task_doc in all_tasks:
+            task = task_doc.to_dict()
+            task_info = {
+                'title': task.get('title', ''),
+                'description': task.get('description', ''),
+                'completed': task.get('completed', False)
+            }
+            task_data.append(task_info)
+        
+        # Build AI prompt
+        prompt = f"""Analyze these {len(task_data)} tasks and extract user preferences:
+
+TASKS:
+{chr(10).join([f"- {t['title']}: {t['description']} (completed: {t['completed']})" for t in task_data[:100]])}
+
+Based on these tasks, identify the user's:
+1. HOBBIES & INTERESTS (e.g., basketball, reading, painting, gaming, cooking, etc.)
+2. WORKOUT STYLES (e.g., cardio, strength, yoga, hiit, running, pilates, etc.)
+3. INDOOR ACTIVITIES (e.g., museums, shopping, theaters, arcades, bowling, etc.)
+4. OUTDOOR ACTIVITIES (e.g., hiking, beach, parks, cycling, kayaking, camping, etc.)
+5. CUISINE TYPES (e.g., italian, mexican, sushi, chinese, thai, etc.)
+6. EVENT PREFERENCES (e.g., concerts, sports, theater, comedy, festivals, etc.)
+
+IMPORTANT: Only include items that appear MULTIPLE times or are clearly important to the user.
+Focus on completed tasks as they show what the user actually does.
+
+Respond in JSON format:
+{{
+  "hobbies": ["hobby1", "hobby2"],
+  "workoutStyles": ["workout1", "workout2"],
+  "indoorActivities": ["activity1", "activity2"],
+  "outdoorActivities": ["activity1", "activity2"],
+  "cuisineTypes": ["cuisine1", "cuisine2"],
+  "eventTypes": ["event1", "event2"]
+}}"""
+        
+        # Call Gemini AI
+        response = gemini_model.generate_content(prompt)
+        ai_response = response.text.strip()
+        
+        # Extract JSON from response
+        import json
+        import re
+        
+        # Try to find JSON in the response
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', ai_response, re.DOTALL)
+        if json_match:
+            preferences_data = json.loads(json_match.group())
+        else:
+            # Try parsing the whole response as JSON
+            preferences_data = json.loads(ai_response)
+        
+        # Load current preferences to merge
+        user_ref = db.collection('users').document(uid)
+        prefs_doc = user_ref.collection('preferences').document('main').get()
+        current_prefs = prefs_doc.to_dict() if prefs_doc.exists else {}
+        
+        # Merge AI-discovered preferences with current ones
+        from datetime import datetime
+        updated_prefs = {
+            **current_prefs,
+            'hobbies': list(set((current_prefs.get('hobbies', []) + preferences_data.get('hobbies', [])))),
+            'workoutStyles': list(set((current_prefs.get('workoutStyles', []) + preferences_data.get('workoutStyles', [])))),
+            'indoorActivities': list(set((current_prefs.get('indoorActivities', []) + preferences_data.get('indoorActivities', [])))),
+            'outdoorActivities': list(set((current_prefs.get('outdoorActivities', []) + preferences_data.get('outdoorActivities', [])))),
+            'cuisineTypes': list(set((current_prefs.get('cuisineTypes', []) + preferences_data.get('cuisineTypes', [])))),
+            'eventTypes': list(set((current_prefs.get('eventTypes', []) + preferences_data.get('eventTypes', [])))),
+            'updatedAt': datetime.now().isoformat()
+        }
+        
+        # Save to Firebase (use SERVER_TIMESTAMP for Firebase only)
+        firebase_prefs = updated_prefs.copy()
+        firebase_prefs['updatedAt'] = firestore.SERVER_TIMESTAMP
+        user_ref.collection('preferences').document('main').set(firebase_prefs, merge=True)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Analyzed {len(task_data)} tasks and discovered your preferences!',
+            'discovered': {
+                'hobbies': preferences_data.get('hobbies', []),
+                'workoutStyles': preferences_data.get('workoutStyles', []),
+                'indoorActivities': preferences_data.get('indoorActivities', []),
+                'outdoorActivities': preferences_data.get('outdoorActivities', []),
+                'cuisineTypes': preferences_data.get('cuisineTypes', []),
+                'eventTypes': preferences_data.get('eventTypes', [])
+            },
+            'preferences': updated_prefs
+        })
+    
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON decode error: {e}")
+        print(f"AI Response: {ai_response}")
+        return jsonify({'error': 'Failed to parse AI response', 'details': str(e)}), 500
+    except Exception as e:
+        print(f"❌ Auto-fill error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/analyze-behavior", methods=["GET"])
+def analyze_behavior():
+    """
+    Analyze user's task history to identify patterns and preferences.
+    
+    Returns insights such as:
+    - Most common task keywords
+    - Preferred activity times
+    - Recurring task patterns
+    - Activity frequency analysis
+    """
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_cookie:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
+        uid = decoded_claims['uid']
+        
+        # Get all user tasks from the last 8 weeks
+        user_ref = db.collection('users').document(uid)
+        tasks_ref = user_ref.collection('tasks')
+        
+        # Fetch recent tasks
+        from datetime import datetime, timedelta, timezone
+        eight_weeks_ago = datetime.now(timezone.utc) - timedelta(weeks=8)
+        
+        # Get all tasks and filter by created_at
+        all_tasks = tasks_ref.stream()
+        
+        # Analysis data structures
+        keyword_frequency = {}
+        time_preferences = {'morning': 0, 'afternoon': 0, 'evening': 0}
+        day_frequency = {'Monday': 0, 'Tuesday': 0, 'Wednesday': 0, 'Thursday': 0, 
+                         'Friday': 0, 'Saturday': 0, 'Sunday': 0}
+        activity_patterns = []
+        
+        task_count = 0
+        for task_doc in all_tasks:
+            task = task_doc.to_dict()
+            
+            # Check if task has created_at and is within the time range
+            created_at = task.get('created_at')
+            if created_at:
+                # Handle both datetime objects and timestamps
+                if hasattr(created_at, 'timestamp'):
+                    # It's a datetime-like object
+                    if created_at.tzinfo is None:
+                        # Make it timezone-aware
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    if created_at < eight_weeks_ago:
+                        continue
+            
+            task_count += 1
+            
+            # Analyze task title and description for keywords
+            text = f"{task.get('title', '')} {task.get('description', '')}".lower()
+            
+            # Common activity keywords
+            keywords = ['workout', 'exercise', 'gym', 'run', 'basketball', 'football', 
+                       'soccer', 'tennis', 'yoga', 'meditation', 'reading', 'study',
+                       'meeting', 'work', 'project', 'coding', 'programming', 'gaming',
+                       'cooking', 'shopping', 'cleaning', 'laundry', 'errands',
+                       'family', 'friends', 'social', 'party', 'concert', 'movie']
+            
+            for keyword in keywords:
+                if keyword in text:
+                    keyword_frequency[keyword] = keyword_frequency.get(keyword, 0) + 1
+            
+            # Analyze time preferences (support both 'time' and 'startTime')
+            start_time = task.get('startTime') or task.get('time')
+            if start_time:
+                try:
+                    hour = int(start_time.split(':')[0])
+                    if 5 <= hour < 12:
+                        time_preferences['morning'] += 1
+                    elif 12 <= hour < 17:
+                        time_preferences['afternoon'] += 1
+                    else:
+                        time_preferences['evening'] += 1
+                except (ValueError, IndexError):
+                    # Skip if time format is invalid
+                    pass
+            
+            # Day frequency
+            day = task.get('day')
+            if day in day_frequency:
+                day_frequency[day] += 1
+        
+        # Sort keywords by frequency
+        top_keywords = sorted(keyword_frequency.items(), key=lambda x: x[1], reverse=True)[:10]
+        
+        # Find preferred time of day
+        preferred_time = max(time_preferences, key=time_preferences.get) if task_count > 0 else 'morning'
+        
+        # Find busiest days
+        busiest_days = sorted(day_frequency.items(), key=lambda x: x[1], reverse=True)[:3]
+        
+        # Generate insights
+        insights = {
+            'taskCount': task_count,
+            'topActivities': [{'keyword': k, 'count': v} for k, v in top_keywords],
+            'preferredTime': preferred_time,
+            'timeDistribution': time_preferences,
+            'busiestDays': [{'day': d, 'count': c} for d, c in busiest_days],
+            'dayDistribution': day_frequency,
+            'analyzedAt': datetime.now().isoformat()
+        }
+        
+        # Save analysis results
+        user_ref.collection('analytics').document('behavior').set({
+            'insights': insights,
+            'lastAnalyzed': firestore.SERVER_TIMESTAMP
+        })
+        
+        return jsonify({
+            'success': True,
+            'insights': insights
+        })
+    
+    except Exception as e:
+        print(f"❌ Behavior analysis error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== EVENT SCRAPING HELPER FUNCTIONS =====
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate distance between two coordinates using geodesic (accurate for earth's surface).
+    
+    Args:
+        lat1, lon1: First coordinate
+        lat2, lon2: Second coordinate
+        
+    Returns:
+        float: Distance in miles
+    """
+    return geodesic((lat1, lon1), (lat2, lon2)).miles
+
+
+def geocode_location(location_string):
+    """
+    Convert location string to coordinates using multiple geocoding services with fallbacks.
+    
+    Args:
+        location_string: City name, county, address, or region
+        
+    Returns:
+        tuple: (latitude, longitude) or None if not found
+    """
+    if not location_string or location_string.strip() == '':
+        return None
+    
+    # Try OpenWeatherMap first
+    try:
+        api_key = os.getenv('OPENWEATHER_API_KEY')
+        if api_key:
+            url = f"http://api.openweathermap.org/geo/1.0/direct?q={quote_plus(location_string)}&limit=1&appid={api_key}"
+            response = requests.get(url, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    print(f"✅ Geocoded '{location_string}' via OpenWeatherMap: ({data[0]['lat']}, {data[0]['lon']})")
+                    return (data[0]['lat'], data[0]['lon'])
+    except Exception as e:
+        print(f"⚠️  OpenWeatherMap geocoding failed: {e}")
+    
+    # Fallback to Nominatim (OpenStreetMap)
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?q={quote_plus(location_string)}&format=json&limit=1&addressdetails=1"
+        headers = {
+            'User-Agent': 'DailyPlannerApp/1.0 (Event Recommendations)'
+        }
+        response = requests.get(url, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                lat = float(data[0]['lat'])
+                lon = float(data[0]['lon'])
+                print(f"✅ Geocoded '{location_string}' via Nominatim: ({lat}, {lon})")
+                return (lat, lon)
+    except Exception as e:
+        print(f"⚠️  Nominatim geocoding failed: {e}")
+    
+    # Try with geopy as final fallback
+    try:
+        from geopy.geocoders import Nominatim
+        geolocator = Nominatim(user_agent="DailyPlannerApp/1.0")
+        location = geolocator.geocode(location_string, timeout=5)
+        if location:
+            print(f"✅ Geocoded '{location_string}' via geopy: ({location.latitude}, {location.longitude})")
+            return (location.latitude, location.longitude)
+    except Exception as e:
+        print(f"⚠️  Geopy geocoding failed: {e}")
+    
+    print(f"❌ Could not geocode location: {location_string}")
+    return None
+
+
+def scrape_specific_events(location, radius_miles=10, max_events=10):
+    """
+    Scrape specific events using targeted searches for event types.
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles  
+        max_events: Maximum number of events to return
+        
+    Returns:
+        list: List of specific event dictionaries
+    """
+    events = []
+    
+    # Parse location for better search
+    location_parts = location.split(',')
+    area_name = location_parts[0].strip() if location_parts else location
+    
+    # Specific event types to search for with sample data
+    event_templates = [
+        {
+            'type': 'concerts',
+            'icon': '🎵',
+            'samples': [
+                f'Live Music at {area_name} Venue',
+                f'Jazz Night in {area_name}',
+                f'{area_name} Concert Series'
+            ]
+        },
+        {
+            'type': 'farmers markets',
+            'icon': '🥕',
+            'samples': [
+                f'{area_name} Farmers Market',
+                f'Weekend Market - {area_name}',
+                f'Local Produce Market'
+            ]
+        },
+        {
+            'type': 'art shows',
+            'icon': '🎨',
+            'samples': [
+                f'{area_name} Art Gallery Opening',
+                f'Local Artists Exhibition',
+                f'Art Walk in {area_name}'
+            ]
+        },
+        {
+            'type': 'festivals',
+            'icon': '🎪',
+            'samples': [
+                f'{area_name} Fall Festival',
+                f'Community Festival',
+                f'Food & Music Festival'
+            ]
+        },
+        {
+            'type': 'theater',
+            'icon': '🎭',
+            'samples': [
+                f'Theater Performance at {area_name}',
+                f'Community Theater Show',
+                f'Local Play Production'
+            ]
+        }
+    ]
+    
+    try:
+        # Try web scraping first
+        for template in event_templates[:3]:  # Limit to 3 types
+            event_type = template['type']
+            search_query = f"{event_type} {location} this week"
+            search_url = f"https://www.google.com/search?q={quote_plus(search_query)}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5'
+            }
+            
+            try:
+                response = requests.get(search_url, headers=headers, timeout=8)
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Look for search results with multiple possible selectors
+                    search_results = soup.find_all('div', class_='g')
+                    if not search_results:
+                        search_results = soup.find_all('div', {'data-sokoban-container': True})
+                    
+                    print(f"🔍 Found {len(search_results)} potential results for {event_type}")
+                    
+                    for result in search_results[:3]:
+                        try:
+                            # Try multiple ways to find title and link
+                            title_elem = result.find('h3')
+                            link_elem = result.find('a', href=True)
+                            
+                            if not title_elem or not link_elem:
+                                continue
+                                
+                            title = title_elem.get_text(strip=True)
+                            url = link_elem['href']
+                            
+                            # Clean up URL
+                            if url.startswith('/url?q='):
+                                url = url.split('/url?q=')[1].split('&')[0]
+                            
+                            # Filter out generic results
+                            title_lower = title.lower()
+                            skip_words = ['calendar', 'list of', 'events near', 'things to do', 'guide to', 'directory', 'upcoming events']
+                            if any(skip in title_lower for skip in skip_words):
+                                continue
+                            
+                            # Get description
+                            desc_elem = result.find('div', class_=['VwiC3b', 'st', 'IsZvec'])
+                            description = desc_elem.get_text(strip=True) if desc_elem else f"{event_type.title()} in {location}"
+                            
+                            events.append({
+                                'id': f'specific_{len(events) + 1}',
+                                'title': title[:100],
+                                'category': event_type.title(),
+                                'icon': template['icon'],
+                                'date': 'Check website',
+                                'time': '',
+                                'venue': location,
+                                'distance': round(random.uniform(1, radius_miles), 1),
+                                'description': description[:150],
+                                'price': 'See website',
+                                'website': url
+                            })
+                            
+                            if len(events) >= max_events:
+                                return events
+                                
+                        except Exception as e:
+                            print(f"⚠️  Error parsing result: {e}")
+                            continue
+                else:
+                    print(f"❌ HTTP {response.status_code} for {event_type}")
+                    
+            except Exception as e:
+                print(f"⚠️  Request failed for {event_type}: {e}")
+                
+            # Small delay between searches
+            import time
+            time.sleep(0.5)
+        
+        # If scraping found nothing, provide curated sample events
+        if len(events) == 0:
+            print(f"📋 Web scraping returned no results. Providing curated local event suggestions...")
+            for i, template in enumerate(event_templates[:5]):
+                sample_title = template['samples'][0]
+                events.append({
+                    'id': f'curated_{i + 1}',
+                    'title': sample_title,
+                    'category': template['type'].title(),
+                    'icon': template['icon'],
+                    'date': 'Check local listings',
+                    'time': 'Various times',
+                    'venue': area_name,
+                    'distance': round(random.uniform(1, radius_miles), 1),
+                    'description': f'Search for {template["type"]} in {area_name}. Check local event calendars, community boards, and social media for current listings.',
+                    'price': 'Varies',
+                    'website': f'https://www.google.com/search?q={quote_plus(template["type"] + " " + location)}'
+                })
+                        
+    except Exception as e:
+        print(f"❌ Specific events scraping error: {e}")
+    
+    return events
+
+
+def scrape_google_events(location, radius_miles=10, max_events=5):
+    """
+    Scrape general events from Google search results.
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles
+        max_events: Maximum number of events to return
+        
+    Returns:
+        list: List of event dictionaries from Google search
+    """
+    events = []
+    area_name = location.split(',')[0].strip() if ',' in location else location
+    
+    try:
+        # General events search
+        search_query = f"events near {location} this week"
+        search_url = f"https://www.google.com/search?q={quote_plus(search_query)}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
+        }
+        
+        response = requests.get(search_url, headers=headers, timeout=8)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Look for search results
+            search_results = soup.find_all('div', class_='g')
+            if not search_results:
+                search_results = soup.find_all('div', {'data-sokoban-container': True})
+            
+            print(f"🔍 Found {len(search_results)} Google search results")
+            
+            for result in search_results[:max_events]:
+                try:
+                    title_elem = result.find('h3')
+                    link_elem = result.find('a', href=True)
+                    
+                    if not title_elem or not link_elem:
+                        continue
+                        
+                    title = title_elem.get_text(strip=True)
+                    url = link_elem['href']
+                    
+                    # Clean up URL
+                    if url.startswith('/url?q='):
+                        url = url.split('/url?q=')[1].split('&')[0]
+                    
+                    # Filter out generic results
+                    title_lower = title.lower()
+                    skip_words = ['calendar', 'list of', 'events near', 'things to do', 'guide to', 'directory', 'upcoming events']
+                    if any(skip in title_lower for skip in skip_words):
+                        continue
+                    
+                    # Get description
+                    desc_elem = result.find('div', class_=['VwiC3b', 'st', 'IsZvec'])
+                    description = desc_elem.get_text(strip=True) if desc_elem else f"Event in {location}"
+                    
+                    events.append({
+                        'id': f'google_{len(events) + 1}',
+                        'title': title[:100],
+                        'category': 'Event',
+                        'icon': '🎉',
+                        'date': 'Check website',
+                        'time': '',
+                        'venue': location,
+                        'distance': round(random.uniform(1, radius_miles), 1),
+                        'description': description[:150],
+                        'price': 'See website',
+                        'website': url
+                    })
+                    
+                    if len(events) >= max_events:
+                        break
+                        
+                except Exception as e:
+                    print(f"⚠️  Error parsing Google event: {e}")
+                    continue
+        
+        # If no events found, provide sample community events
+        if len(events) == 0:
+            print(f"📋 Providing sample community event suggestions for {area_name}...")
+            events.append({
+                'id': 'community_1',
+                'title': f'{area_name} Community Events',
+                'category': 'Community',
+                'icon': '🏘️',
+                'date': 'Ongoing',
+                'time': 'Various',
+                'venue': area_name,
+                'distance': round(random.uniform(1, radius_miles), 1),
+                'description': f'Check local community boards, Facebook groups, and Nextdoor for current events in {area_name}.',
+                'price': 'Free - Varies',
+                'website': f'https://www.google.com/search?q=events+{quote_plus(location)}'
+            })
+                    
+    except Exception as e:
+        print(f"❌ Google events scraping error: {e}")
+    
+    return events
+
+
+def scrape_local_venue_events(location, radius_miles=10, max_events=5):
+    """
+    Search for events at specific local venues and establishments.
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles
+        max_events: Maximum number of events to return
+        
+    Returns:
+        list: List of venue-specific events
+    """
+    events = []
+    area_name = location.split(',')[0].strip() if ',' in location else location
+    
+    try:
+        # Search for local venues with events
+        venue_queries = [
+            f"music venues {location} events this week",
+            f"theaters {location} shows",
+            f"community centers {location} activities"
+        ]
+        
+        for query in venue_queries[:2]:  # Limit queries
+            search_url = f"https://www.google.com/search?q={quote_plus(query)}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            
+            try:
+                response = requests.get(search_url, headers=headers, timeout=8)
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Find venue listings
+                    results = soup.find_all('div', class_='g')
+                    if not results:
+                        results = soup.find_all('div', {'data-sokoban-container': True})
+                    
+                    print(f"🔍 Found {len(results)} potential venue results")
+                    
+                    for result in results[:3]:
+                        try:
+                            title_elem = result.find('h3')
+                            link_elem = result.find('a', href=True)
+                            
+                            if title_elem and link_elem:
+                                title = title_elem.get_text(strip=True)
+                                url = link_elem['href']
+                                
+                                if url.startswith('/url?q='):
+                                    url = url.split('/url?q=')[1].split('&')[0]
+                                
+                                # Look for venue names in title
+                                if any(word in title.lower() for word in ['venue', 'theater', 'center', 'hall', 'club']):
+                                    events.append({
+                                        'id': f'venue_{len(events) + 1}',
+                                        'title': f"Events at {title}",
+                                        'category': 'Venue Events',
+                                        'icon': '🏛️',
+                                        'date': 'Ongoing',
+                                        'time': 'Check schedule',
+                                        'venue': title,
+                                        'distance': round(random.uniform(1, radius_miles), 1),
+                                        'description': f"Check current events and shows at {title}",
+                                        'price': 'Varies',
+                                        'website': url
+                                    })
+                                    
+                                    if len(events) >= max_events:
+                                        return events
+                                        
+                        except Exception as e:
+                            print(f"⚠️  Error parsing venue result: {e}")
+                            continue
+                            
+            except Exception as e:
+                print(f"⚠️  Request failed for venue query: {e}")
+                continue
+        
+        # If no venues found, provide sample venue suggestions
+        if len(events) == 0:
+            print(f"📋 Providing sample venue suggestions for {area_name}...")
+            sample_venues = [
+                {'name': f'{area_name} Performing Arts Center', 'icon': '🎭'},
+                {'name': f'{area_name} Music Hall', 'icon': '🎵'},
+                {'name': f'Community Center - {area_name}', 'icon': '🏛️'}
+            ]
+            
+            for i, venue in enumerate(sample_venues[:2]):
+                events.append({
+                    'id': f'venue_sample_{i + 1}',
+                    'title': f"Events at {venue['name']}",
+                    'category': 'Venue Events',
+                    'icon': venue['icon'],
+                    'date': 'Ongoing',
+                    'time': 'Check schedule',
+                    'venue': venue['name'],
+                    'distance': round(random.uniform(1, radius_miles), 1),
+                    'description': f"Search for current events and shows. Check their website or call for schedule.",
+                    'price': 'Varies',
+                    'website': f'https://www.google.com/search?q={quote_plus(venue["name"])}'
+                })
+                        
+    except Exception as e:
+        print(f"❌ Venue events scraping error: {e}")
+    
+    return events
+
+
+def scrape_local_events(location, radius_miles=10, max_events=10):
+    """
+    Aggregate specific events from multiple targeted sources.
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles
+        max_events: Maximum events to return
+        
+    Returns:
+        list: Combined list of specific events
+    """
+    all_events = []
+    
+    print(f"🔍 Searching for specific events near {location} within {radius_miles} miles...")
+    
+    # Specific event type searches
+    specific_events = scrape_specific_events(location, radius_miles, max_events // 2)
+    all_events.extend(specific_events)
+    print(f"✅ Found {len(specific_events)} specific events")
+    
+    # Local venue events
+    venue_events = scrape_local_venue_events(location, radius_miles, max_events // 4)
+    all_events.extend(venue_events)
+    print(f"✅ Found {len(venue_events)} venue events")
+    
+    # Google general search (improved)
+    google_events = scrape_google_events(location, radius_miles, max_events // 4)
+    all_events.extend(google_events)
+    print(f"✅ Found {len(google_events)} events from Google")
+    
+    # If still no specific events found, provide location-based resources
+    if len(all_events) == 0:
+        print(f"⚠️  No specific events found. Providing location-based resources...")
+        all_events = generate_sample_events_for_location(location, radius_miles)
+    
+    # Remove duplicates and filter quality
+    seen_titles = set()
+    unique_events = []
+    for event in all_events:
+        title_key = event['title'].lower()[:50]
+        if title_key not in seen_titles and len(event['title']) > 10:
+            seen_titles.add(title_key)
+            unique_events.append(event)
+    
+    # Prioritize specific named events over generic ones
+    unique_events.sort(key=lambda x: (
+        0 if any(word in x['title'].lower() for word in ['festival', 'concert', 'show', 'market']) else 1,
+        -len(x['title'])
+    ))
+    
+    # Randomize within quality tiers and limit
+    random.shuffle(unique_events)
+    return unique_events[:max_events]
+
+
+def generate_sample_events_for_location(location, radius_miles=10):
+    """
+    Generate sample events when scraping fails, customized for the location.
+    
+    Args:
+        location: User's location string
+        radius_miles: Search radius
+        
+    Returns:
+        list: Sample events appropriate for the area
+    """
+    # Parse location to get area name
+    location_parts = location.split(',')
+    area_name = location_parts[0].strip() if location_parts else location
+    
+    sample_events = [
+        {
+            'id': 'sample_1',
+            'title': f'Local Events in {area_name}',
+            'category': 'Community',
+            'icon': '🎪',
+            'date': 'This Weekend',
+            'time': 'Various Times',
+            'venue': f'{area_name} Area',
+            'distance': round(random.uniform(1, radius_miles), 1),
+            'description': f'Check local event listings and community boards in {area_name} for upcoming activities.',
+            'price': 'Varies',
+            'website': f'https://www.google.com/search?q=events+near+{quote_plus(location)}'
+        },
+        {
+            'id': 'sample_2',
+            'title': 'Community Farmers Market',
+            'category': 'Community',
+            'icon': '🥕',
+            'date': 'Saturdays',
+            'time': '8:00 AM - 1:00 PM',
+            'venue': f'{area_name} Downtown',
+            'distance': round(random.uniform(1, radius_miles), 1),
+            'description': 'Fresh local produce, artisan goods, and community gathering.',
+            'price': 'Free entry',
+            'website': f'https://www.google.com/search?q=farmers+market+{quote_plus(location)}'
+        },
+        {
+            'id': 'sample_3',
+            'title': 'Library Events & Workshops',
+            'category': 'Education',
+            'icon': '📚',
+            'date': 'Ongoing',
+            'time': 'Check schedule',
+            'venue': f'{area_name} Public Library',
+            'distance': round(random.uniform(1, radius_miles), 1),
+            'description': 'Free workshops, book clubs, and community programs.',
+            'price': 'Free',
+            'website': f'https://www.google.com/search?q=library+events+{quote_plus(location)}'
+        },
+        {
+            'id': 'sample_4',
+            'title': 'Local Parks & Recreation',
+            'category': 'Outdoor',
+            'icon': '🌳',
+            'date': 'Daily',
+            'time': 'Dawn to Dusk',
+            'venue': f'{area_name} Parks',
+            'distance': round(random.uniform(1, radius_miles), 1),
+            'description': 'Explore local parks, trails, and outdoor activities.',
+            'price': 'Free',
+            'website': f'https://www.google.com/search?q=parks+near+{quote_plus(location)}'
+        },
+        {
+            'id': 'sample_5',
+            'title': 'Community Arts & Culture',
+            'category': 'Arts',
+            'icon': '🎨',
+            'date': 'Check calendar',
+            'time': 'Various',
+            'venue': f'{area_name} Cultural Center',
+            'distance': round(random.uniform(1, radius_miles), 1),
+            'description': 'Local art galleries, theater performances, and cultural events.',
+            'price': 'Varies',
+            'website': f'https://www.google.com/search?q=arts+culture+events+{quote_plus(location)}'
+        }
+    ]
+    
+    print(f"📋 Generated {len(sample_events)} location-based sample events for {location}")
+    return sample_events
+
+
+# ===== REAL API INTEGRATIONS FOR EVENTS & PLACES =====
+
+def get_google_places_nearby(location, radius_miles=10, max_results=20, user_preferences=None, custom_query=None):
+    """
+    Get real nearby places using Google Places API (New) with smart interest-based searching.
+    
+    Searches for places based on user interests:
+    - Basketball lover → basketball courts, sports complexes
+    - Dog owner → dog parks, dog-friendly restaurants
+    - Food preferences → specific cuisine types
+    - Activity preferences → relevant venues
+    
+    Args:
+        location: Location string (city, address)
+        radius_miles: Search radius in miles (1-20 recommended)
+        max_results: Maximum number of results
+        user_preferences: User preference dict with interests, pets, cuisines, etc.
+        custom_query: Optional custom search query (e.g., "dog friendly restaurants near me")
+        
+    Returns:
+        list: Real nearby places with details, personalized to user interests
+    """
+    places = []
+    
+    try:
+        # Get coordinates for location
+        coords = geocode_location(location)
+        if not coords:
+            print(f"❌ Could not geocode location: {location}")
+            return places
+        
+        lat, lon = coords
+        radius_meters = int(radius_miles * 1609.34)  # Convert miles to meters
+        
+        # Google Places API key from environment
+        api_key = os.getenv('GOOGLE_PLACES_API_KEY')
+        if not api_key:
+            print("⚠️  No Google Places API key found. Set GOOGLE_PLACES_API_KEY in .env")
+            return places
+        
+        # Build smart search queries based on user preferences
+        search_queries = []
+        
+        # Extract user preferences FIRST (needed for both custom and default queries)
+        has_dog = user_preferences.get('hasDog', False) if user_preferences else False
+        hobbies = user_preferences.get('hobbies', []) if user_preferences else []
+        cuisines = user_preferences.get('cuisineTypes', []) if user_preferences else []
+        outdoor_activities = user_preferences.get('outdoorActivities', []) if user_preferences else []
+        indoor_activities = user_preferences.get('indoorActivities', []) if user_preferences else []
+        workout_styles = user_preferences.get('workoutStyles', []) if user_preferences else []
+        
+        # If custom query provided (from AI assistant), use that exclusively
+        if custom_query:
+            search_queries = [{'query': custom_query, 'icon': '🔍', 'category': 'Search Results', 'priority': 1}]
+        else:
+            
+            # DOG OWNER - Include dog-friendly places in variety
+            if has_dog:
+                search_queries.extend([
+                    {'query': f'dog park near {location}', 'icon': '🐕', 'category': 'Dog Parks', 'priority': 2},
+                    {'query': f'dog-friendly restaurant near {location}', 'icon': '🍽️', 'category': 'Dog-Friendly Dining', 'priority': 3},
+                ])
+            
+            # SPORTS & RECREATION - Based on hobbies
+            if any(hobby in ['basketball', 'sports'] for hobby in hobbies) or \
+               any(activity in ['basketball', 'sports'] for activity in outdoor_activities):
+                search_queries.extend([
+                    {'query': f'basketball court near {location}', 'icon': '🏀', 'category': 'Basketball Courts', 'priority': 1},
+                    {'query': f'sports complex near {location}', 'icon': '🏆', 'category': 'Sports Facilities', 'priority': 2},
+                ])
+            if 'soccer' in hobbies or 'soccer' in outdoor_activities:
+                search_queries.append({'query': f'soccer field near {location}', 'icon': '⚽', 'category': 'Soccer Fields', 'priority': 1})
+            if 'golf' in hobbies or 'golf' in outdoor_activities:
+                search_queries.append({'query': f'golf course near {location}', 'icon': '⛳', 'category': 'Golf Courses', 'priority': 1})
+            if 'tennis' in hobbies or 'tennis' in outdoor_activities:
+                search_queries.append({'query': f'tennis court near {location}', 'icon': '🎾', 'category': 'Tennis', 'priority': 1})
+            if 'gaming' in hobbies:
+                search_queries.append({'query': f'gaming lounge near {location}', 'icon': '🎮', 'category': 'Gaming', 'priority': 2})
+            if 'reading' in hobbies:
+                search_queries.append({'query': f'library near {location}', 'icon': '📚', 'category': 'Libraries', 'priority': 2})
+            if 'painting' in hobbies or 'arts' in hobbies:
+                search_queries.append({'query': f'art gallery near {location}', 'icon': '🎨', 'category': 'Art & Culture', 'priority': 1})
+            if 'cooking' in hobbies:
+                search_queries.append({'query': f'cooking class near {location}', 'icon': '🍳', 'category': 'Cooking Classes', 'priority': 2})
+            if 'photography' in hobbies:
+                search_queries.append({'query': f'photo gallery near {location}', 'icon': '📷', 'category': 'Photography', 'priority': 2})
+            if 'music' in hobbies:
+                search_queries.append({'query': f'music venue near {location}', 'icon': '🎵', 'category': 'Live Music', 'priority': 1})
+            
+            # WORKOUT FACILITIES - Based on workout preferences
+            if any(workout in ['gym', 'strength', 'cardio', 'hiit'] for workout in workout_styles):
+                search_queries.append({'query': f'gym near {location}', 'icon': '💪', 'category': 'Fitness Centers', 'priority': 1})
+            if 'yoga' in workout_styles or 'pilates' in workout_styles:
+                search_queries.append({'query': f'yoga studio near {location}', 'icon': '🧘', 'category': 'Yoga & Wellness', 'priority': 1})
+            if 'running' in workout_styles or 'running' in outdoor_activities:
+                search_queries.append({'query': f'running trail near {location}', 'icon': '🏃', 'category': 'Running Trails', 'priority': 1})
+            if 'walking' in workout_styles or 'walking' in outdoor_activities:
+                search_queries.append({'query': f'walking trail near {location}', 'icon': '🚶', 'category': 'Walking Trails', 'priority': 1})
+            
+            # RESTAURANTS & DINING - Always include general restaurants + user cuisines
+            # Add general restaurant search (priority 1 so it shows up)
+            search_queries.append({
+                'query': f'restaurant near {location}',
+                'icon': '🍽️',
+                'category': 'Restaurants',
+                'priority': 1
+            })
+            
+            # Add specific cuisines if user has them (limit to 2 for variety)
+            for cuisine in cuisines[:2]:
+                search_queries.append({
+                    'query': f'{cuisine} restaurant near {location}',
+                    'icon': '🍽️',
+                    'category': f'{cuisine.title()} Dining',
+                    'priority': 2
+                })
+            
+            # CAFES & BARS - Always include these social/dining venues
+            search_queries.extend([
+                {'query': f'cafe near {location}', 'icon': '☕', 'category': 'Cafes', 'priority': 1},
+                {'query': f'bar near {location}', 'icon': '🍺', 'category': 'Bars & Nightlife', 'priority': 2},
+            ])
+            
+            # OUTDOOR ACTIVITIES
+            if 'hiking' in outdoor_activities or 'nature' in hobbies:
+                search_queries.append({'query': f'hiking trail near {location}', 'icon': '🥾', 'category': 'Hiking', 'priority': 1})
+            if 'beaches' in outdoor_activities or 'beach' in outdoor_activities:
+                search_queries.append({'query': f'beach near {location}', 'icon': '🏖️', 'category': 'Beaches', 'priority': 1})
+            if 'parks' in outdoor_activities:
+                search_queries.append({'query': f'park near {location}', 'icon': '🌳', 'category': 'Parks', 'priority': 1})
+            if 'cycling' in outdoor_activities:
+                search_queries.append({'query': f'bike trail near {location}', 'icon': '🚴', 'category': 'Cycling', 'priority': 1})
+            if 'kayaking' in outdoor_activities:
+                search_queries.append({'query': f'kayak rental near {location}', 'icon': '🛶', 'category': 'Water Sports', 'priority': 2})
+            if 'camping' in outdoor_activities:
+                search_queries.append({'query': f'campground near {location}', 'icon': '⛺', 'category': 'Camping', 'priority': 2})
+            if 'fishing' in outdoor_activities:
+                search_queries.append({'query': f'fishing spot near {location}', 'icon': '🎣', 'category': 'Fishing', 'priority': 2})
+            
+            # INDOOR ACTIVITIES
+            if 'museums' in indoor_activities:
+                search_queries.append({'query': f'museum near {location}', 'icon': '🏛️', 'category': 'Museums', 'priority': 1})
+            if 'theaters' in indoor_activities:
+                search_queries.append({'query': f'theater near {location}', 'icon': '🎭', 'category': 'Theater', 'priority': 1})
+            if 'shopping' in indoor_activities:
+                search_queries.append({'query': f'shopping center near {location}', 'icon': '🛍️', 'category': 'Shopping', 'priority': 2})
+            if 'arcades' in indoor_activities:
+                search_queries.append({'query': f'arcade near {location}', 'icon': '🕹️', 'category': 'Arcades', 'priority': 2})
+            if 'bowling' in indoor_activities:
+                search_queries.append({'query': f'bowling alley near {location}', 'icon': '🎳', 'category': 'Bowling', 'priority': 1})
+            if 'climbing' in indoor_activities:
+                search_queries.append({'query': f'rock climbing gym near {location}', 'icon': '🧗', 'category': 'Climbing', 'priority': 1})
+            if 'escape-rooms' in indoor_activities:
+                search_queries.append({'query': f'escape room near {location}', 'icon': '🔐', 'category': 'Escape Rooms', 'priority': 2})
+            
+            # DEFAULT CATEGORIES (ensure variety if limited preferences)
+            # These are lower priority but add diversity
+            default_queries = [
+                {'query': f'park near {location}', 'icon': '🌳', 'category': 'Parks', 'priority': 3},
+                {'query': f'movie theater near {location}', 'icon': '🎬', 'category': 'Entertainment', 'priority': 3},
+                {'query': f'shopping mall near {location}', 'icon': '🛍️', 'category': 'Shopping', 'priority': 3},
+                {'query': f'bookstore near {location}', 'icon': '📚', 'category': 'Bookstores', 'priority': 3},
+                {'query': f'ice cream near {location}', 'icon': '🍦', 'category': 'Desserts', 'priority': 3},
+                {'query': f'bakery near {location}', 'icon': '🥐', 'category': 'Bakeries', 'priority': 3},
+            ]
+            
+            # Add defaults if we don't have enough personalized queries
+            if len(search_queries) < 8:
+                search_queries.extend(default_queries[:8 - len(search_queries)])
+            
+            # Sort by priority (lower = higher priority)
+            search_queries.sort(key=lambda x: x['priority'])
+        
+        # Using Places API (New) - Text Search endpoint
+        base_url = "https://places.googleapis.com/v1/places:searchText"
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': api_key,
+            'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.types,places.rating,places.userRatingCount,places.priceLevel,places.location,places.googleMapsUri,places.currentOpeningHours'
+        }
+        
+        # Track seen places to avoid duplicates
+        seen_names = set()
+        
+        # Search with variety - get results from multiple queries
+        for search_item in search_queries[:8]:  # Max 8 different searches for variety
+            payload = {
+                'textQuery': search_item['query'],
+                'locationBias': {
+                    'circle': {
+                        'center': {
+                            'latitude': lat,
+                            'longitude': lon
+                        },
+                        'radius': radius_meters
+                    }
+                },
+                'maxResultCount': 5  # Get top 5 per search for variety
+            }
+            
+            try:
+                response = requests.post(base_url, headers=headers, json=payload, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    results = data.get('places', [])
+                    
+                    for place in results:
+                        # Calculate distance
+                        place_location = place.get('location', {})
+                        place_lat = place_location.get('latitude')
+                        place_lon = place_location.get('longitude')
+                        
+                        distance = 0
+                        if place_lat and place_lon:
+                            distance = calculate_distance(lat, lon, place_lat, place_lon)
+                        
+                        # Extract details
+                        name = place.get('displayName', {}).get('text', 'Unknown Place')
+                        
+                        # Skip duplicates
+                        if name.lower() in seen_names:
+                            continue
+                        seen_names.add(name.lower())
+                        
+                        # IMPORTANT: Skip places outside the user's radius
+                        if distance and distance > radius_miles:
+                            print(f"   ⚠️  Filtering out '{name}' - {distance:.1f} mi away (radius: {radius_miles} mi)")
+                            continue
+                        
+                        address = place.get('formattedAddress', location)
+                        rating = place.get('rating', 'N/A')
+                        user_ratings = place.get('userRatingCount', 0)
+                        price_level = place.get('priceLevel', 'PRICE_LEVEL_UNSPECIFIED')
+                        maps_uri = place.get('googleMapsUri', '#')
+                        place_types = place.get('types', [])
+                        
+                        # Convert price level to symbols
+                        price_map = {
+                            'PRICE_LEVEL_FREE': 'Free',
+                            'PRICE_LEVEL_INEXPENSIVE': '💰',
+                            'PRICE_LEVEL_MODERATE': '💰💰',
+                            'PRICE_LEVEL_EXPENSIVE': '💰💰💰',
+                            'PRICE_LEVEL_VERY_EXPENSIVE': '💰💰💰💰'
+                        }
+                        price_str = price_map.get(price_level, 'Price varies')
+                        
+                        # Check if currently open
+                        is_open = place.get('currentOpeningHours', {}).get('openNow', False)
+                        open_status = 'Open Now' if is_open else 'Check hours'
+                        
+                        # Enhanced dog-friendly detection
+                        dog_friendly = False
+                        if has_dog:
+                            # Check multiple indicators
+                            name_lower = name.lower()
+                            address_lower = address.lower()
+                            dog_keywords = ['dog', 'pet', 'patio', 'outdoor', 'terrace', 'garden', 'park']
+                            dog_friendly = any(keyword in name_lower or keyword in address_lower for keyword in dog_keywords)
+                            
+                            # Dog parks are always dog-friendly
+                            if 'park' in place_types or 'dog_park' in place_types or 'park' in search_item['category'].lower():
+                                dog_friendly = True
+                        
+                        places.append({
+                            'id': f"place_{len(places) + 1}",
+                            'title': name,
+                            'category': search_item['category'],
+                            'icon': search_item['icon'],  # Use single icon only
+                            'type': 'place',  # Differentiate from events
+                            'date': open_status,
+                            'time': '',
+                            'venue': address,
+                            'distance': round(distance, 1) if distance else 'N/A',
+                            'description': f"Rating: {'⭐' * int(rating) if isinstance(rating, (int, float)) else rating} ({user_ratings} reviews)" if user_ratings > 0 else "New place",
+                            'price': price_str,
+                            'website': maps_uri,
+                            'rating': rating,
+                            'dog_friendly': dog_friendly,
+                            'priority': search_item['priority']  # For sorting
+                        })
+                        
+                        if len(places) >= max_results:
+                            # Shuffle for variety on each refresh
+                            random.shuffle(places)
+                            return places
+                
+                elif response.status_code == 403:
+                    print(f"❌ Google Places API error: Billing not enabled or API not activated")
+                    print(f"   Visit: https://console.cloud.google.com/apis/library/places-backend.googleapis.com")
+                    return places
+                else:
+                    error_data = response.json() if response.content else {}
+                    print(f"❌ Google Places API error: {response.status_code}")
+                    print(f"   Response: {error_data}")
+                    
+            except Exception as e:
+                print(f"⚠️  Error fetching {search_item['category']}: {e}")
+                continue
+        
+        # Shuffle for variety on each refresh before returning
+        random.shuffle(places)
+        
+        print(f"✅ Returning {len(places)} places within {radius_miles} mile radius")
+                
+    except Exception as e:
+        print(f"❌ Google Places API error: {e}")
+    
+    return places
+
+
+def get_ticketmaster_events(location, radius_miles=10, max_results=10):
+    """
+    Get real events from Ticketmaster Discovery API.
+    
+    Event types:
+    - Concerts (music)
+    - Sports games
+    - Theater & performing arts
+    - Comedy shows
+    - Family events
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles
+        max_results: Maximum number of results
+        
+    Returns:
+        list: Real upcoming events
+    """
+    events = []
+    
+    try:
+        # Get coordinates
+        coords = geocode_location(location)
+        if not coords:
+            print(f"❌ Could not geocode location for Ticketmaster: {location}")
+            return events
+        
+        lat, lon = coords
+        
+        # Ticketmaster API key
+        api_key = os.getenv('TICKETMASTER_API_KEY')
+        if not api_key:
+            print("⚠️  No Ticketmaster API key. Set TICKETMASTER_API_KEY in .env")
+            return events
+        
+        base_url = "https://app.ticketmaster.com/discovery/v2/events.json"
+        
+        params = {
+            'apikey': api_key,
+            'latlong': f"{lat},{lon}",
+            'radius': int(radius_miles),
+            'unit': 'miles',
+            'size': max_results,
+            'sort': 'date,asc'
+        }
+        
+        response = requests.get(base_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if '_embedded' in data and 'events' in data['_embedded']:
+                for event in data['_embedded']['events']:
+                    # Parse event details
+                    name = event.get('name', 'Unknown Event')
+                    event_type = event.get('classifications', [{}])[0].get('segment', {}).get('name', 'Event')
+                    genre = event.get('classifications', [{}])[0].get('genre', {}).get('name', '')
+                    
+                    # Date and time
+                    start_date = event.get('dates', {}).get('start', {})
+                    date_str = start_date.get('localDate', 'TBA')
+                    time_str = start_date.get('localTime', '')
+                    
+                    # Format date nicely
+                    try:
+                        from datetime import datetime
+                        dt = datetime.strptime(date_str, '%Y-%m-%d')
+                        date_formatted = dt.strftime('%b %d, %Y')
+                    except:
+                        date_formatted = date_str
+                    
+                    # Venue
+                    venue_info = event.get('_embedded', {}).get('venues', [{}])[0]
+                    venue_name = venue_info.get('name', 'TBA')
+                    venue_city = venue_info.get('city', {}).get('name', '')
+                    
+                    # Distance
+                    venue_lat = venue_info.get('location', {}).get('latitude')
+                    venue_lon = venue_info.get('location', {}).get('longitude')
+                    distance = 0
+                    if venue_lat and venue_lon:
+                        distance = calculate_distance(lat, lon, float(venue_lat), float(venue_lon))
+                    
+                    # IMPORTANT: Skip events outside the user's radius
+                    if distance and distance > radius_miles:
+                        print(f"   ⚠️  Filtering out '{name}' - {distance:.1f} mi away (radius: {radius_miles} mi)")
+                        continue
+                    
+                    # Price range
+                    price_ranges = event.get('priceRanges', [])
+                    price_str = 'See website'
+                    if price_ranges:
+                        min_price = price_ranges[0].get('min', 0)
+                        max_price = price_ranges[0].get('max', 0)
+                        price_str = f"${min_price:.0f} - ${max_price:.0f}"
+                    
+                    # Icon based on type
+                    icon_map = {
+                        'Music': '🎵',
+                        'Sports': '🏆',
+                        'Arts & Theatre': '🎭',
+                        'Family': '👨‍👩‍👧‍👦',
+                        'Film': '🎬',
+                        'Miscellaneous': '🎪'
+                    }
+                    icon = icon_map.get(event_type, '🎉')
+                    
+                    # URL
+                    url = event.get('url', '#')
+                    
+                    events.append({
+                        'id': f"tm_{event.get('id', '')}",
+                        'title': name,
+                        'category': f"{event_type} - {genre}" if genre else event_type,
+                        'icon': icon,
+                        'type': 'event',  # Differentiate from places
+                        'date': date_formatted,
+                        'time': time_str if time_str else 'Check website',
+                        'venue': f"{venue_name}, {venue_city}",
+                        'distance': round(distance, 1),
+                        'description': f"{event_type} event" + (f" - {genre}" if genre else ""),
+                        'price': price_str,
+                        'website': url
+                    })
+        else:
+            print(f"❌ Ticketmaster API HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"❌ Ticketmaster API error: {e}")
+    
+    print(f"✅ Returning {len(events)} events within {radius_miles} mile radius")
+    return events
+
+
+def get_all_recommendations(location, radius_miles=10, max_results=20, user_preferences=None):
+    """
+    Aggregate recommendations from all sources with smart personalization.
+    - Google Places (restaurants, parks, stores, etc.) - PERSONALIZED by interests
+    - Ticketmaster (concerts, sports, theater) - Major events
+    
+    Focus on variety: restaurants, cafes, parks, entertainment venues, sports facilities
+    
+    Args:
+        location: Location string
+        radius_miles: Search radius in miles (1-20 recommended)
+        max_results: Maximum total results (will return up to 10 places and 10 events)
+        user_preferences: User preference dict for personalization
+        
+    Returns:
+        dict: Combined recommendations with separate categories
+    """
+    all_recommendations = {
+        'places': [],
+        'events': [],
+        'total': 0
+    }
+    
+    try:
+        print(f"🔍 Fetching recommendations for {location} (radius: {radius_miles} mi)...")
+        
+        # Get MORE results than we'll show (for rotation variety)
+        # Get 20 places and 20 ticketmaster events for balanced variety
+        places = get_google_places_nearby(location, radius_miles, max_results=20, user_preferences=user_preferences)
+        print(f"✅ Found {len(places)} nearby places")
+        
+        tm_events = get_ticketmaster_events(location, radius_miles, max_results=20)
+        print(f"✅ Found {len(tm_events)} Ticketmaster events")
+        
+        # Combine places and events into one pool
+        all_items = []
+        for place in places:
+            place['type'] = 'place'
+            all_items.append(place)
+        for event in tm_events:
+            event['type'] = 'event'
+            all_items.append(event)
+        
+        # Shuffle for variety on each refresh, but use a time-based seed
+        # so results stay consistent for ~5 minutes (then rotate)
+        import random
+        import time
+        seed = int(time.time() / 300)  # Changes every 5 minutes
+        random.seed(seed)
+        random.shuffle(all_items)
+        
+        # Take only 10 items total
+        selected_items = all_items[:10]
+        
+        # Separate back into places and events
+        all_recommendations['places'] = [item for item in selected_items if item['type'] == 'place']
+        all_recommendations['events'] = [item for item in selected_items if item['type'] == 'event']
+        all_recommendations['total'] = len(selected_items)
+        
+        print(f"📊 Showing {all_recommendations['total']} recommendations (refreshes every 5 min)")
+        
+    except Exception as e:
+        print(f"❌ Error aggregating recommendations: {e}")
+    
+    return all_recommendations
+
+
+@app.route("/api/recommendations", methods=["GET"])
+def get_recommendations():
+    """
+    Get personalized recommendations using real APIs:
+    - Google Places API: Restaurants, parks, stores, dog-friendly spots
+    - Ticketmaster API: Concerts, sports, theater events
+    
+    Returns up to 10 places and 10 events (20 total) for faster loading.
+    """
+    session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_cookie:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        decoded_claims = auth.verify_session_cookie(session_cookie, check_revoked=True)
+        uid = decoded_claims['uid']
+        
+        # Get user preferences
+        user_ref = db.collection('users').document(uid)
+        prefs_doc = user_ref.collection('preferences').document('main').get()
+        
+        # Default values - ALWAYS use Monmouth County as fallback
+        location = 'Monmouth County, NJ'  # Default location
+        radius = 10  # Default 10 miles (1-20 mile range)
+        user_preferences = None
+        auto_filled = False
+        
+        if prefs_doc.exists:
+            user_preferences = prefs_doc.to_dict()
+            # Only override default if user explicitly set a location
+            user_location = user_preferences.get('location', '').strip()
+            if user_location:
+                location = user_location
+            # Get radius from preferences, clamp to 1-20 mile range
+            radius = user_preferences.get('maxTravelDistance', 10)
+            radius = max(1, min(20, radius))  # Ensure 1-20 range
+        
+        # AUTO-FILL PREFERENCES if user has no preferences set
+        if not user_preferences or not any([
+            user_preferences.get('hobbies'),
+            user_preferences.get('workoutStyles'),
+            user_preferences.get('indoorActivities'),
+            user_preferences.get('outdoorActivities'),
+            user_preferences.get('cuisineTypes')
+        ]):
+            # Check if user has enough tasks to analyze
+            tasks_ref = db.collection('users').document(uid).collection('tasks')
+            task_count = len(list(tasks_ref.limit(10).stream()))
+            
+            if task_count >= 5:
+                print(f"🤖 Auto-filling preferences for user {uid} based on {task_count} tasks...")
+                try:
+                    # Call autofill logic inline
+                    all_tasks = list(tasks_ref.stream())
+                    task_data = []
+                    for task_doc in all_tasks:
+                        task = task_doc.to_dict()
+                        task_info = {
+                            'title': task.get('title', ''),
+                            'description': task.get('description', ''),
+                            'completed': task.get('completed', False)
+                        }
+                        task_data.append(task_info)
+                    
+                    # Build AI prompt
+                    prompt = f"""Analyze these {len(task_data)} tasks and extract user preferences:
+
+TASKS:
+{chr(10).join([f"- {t['title']}: {t['description']} (completed: {t['completed']})" for t in task_data[:100]])}
+
+Based on these tasks, identify the user's:
+1. HOBBIES & INTERESTS (e.g., basketball, reading, painting, gaming, cooking, etc.)
+2. WORKOUT STYLES (e.g., cardio, strength, yoga, hiit, running, pilates, etc.)
+3. INDOOR ACTIVITIES (e.g., museums, shopping, theaters, arcades, bowling, etc.)
+4. OUTDOOR ACTIVITIES (e.g., hiking, beach, parks, cycling, kayaking, camping, etc.)
+5. CUISINE TYPES (e.g., italian, mexican, sushi, chinese, thai, etc.)
+6. EVENT PREFERENCES (e.g., concerts, sports, theater, comedy, festivals, etc.)
+
+IMPORTANT: Only include items that appear MULTIPLE times or are clearly important to the user.
+Focus on completed tasks as they show what the user actually does.
+
+Respond in JSON format:
+{{
+  "hobbies": ["hobby1", "hobby2"],
+  "workoutStyles": ["workout1", "workout2"],
+  "indoorActivities": ["activity1", "activity2"],
+  "outdoorActivities": ["activity1", "activity2"],
+  "cuisineTypes": ["cuisine1", "cuisine2"],
+  "eventTypes": ["event1", "event2"]
+}}"""
+                    
+                    # Call Gemini AI
+                    if gemini_model:
+                        response = gemini_model.generate_content(prompt)
+                        ai_response = response.text.strip()
+                        
+                        # Extract JSON from response
+                        import json
+                        import re
+                        
+                        # Try to find JSON in the response
+                        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', ai_response, re.DOTALL)
+                        if json_match:
+                            preferences_data = json.loads(json_match.group())
+                        else:
+                            # Try parsing the whole response as JSON
+                            preferences_data = json.loads(ai_response)
+                        
+                        # Save auto-filled preferences
+                        from datetime import datetime
+                        auto_prefs = {
+                            'hobbies': preferences_data.get('hobbies', []),
+                            'workoutStyles': preferences_data.get('workoutStyles', []),
+                            'indoorActivities': preferences_data.get('indoorActivities', []),
+                            'outdoorActivities': preferences_data.get('outdoorActivities', []),
+                            'cuisineTypes': preferences_data.get('cuisineTypes', []),
+                            'eventCategories': preferences_data.get('eventTypes', []),
+                            'maxTravelDistance': radius,
+                            'wakeTime': '07:00',
+                            'bedTime': '23:00',
+                            'updatedAt': firestore.SERVER_TIMESTAMP,
+                            'autoFilled': True
+                        }
+                        user_ref.collection('preferences').document('main').set(auto_prefs, merge=True)
+                        user_preferences = auto_prefs
+                        auto_filled = True
+                        print(f"✅ Auto-filled preferences: {list(preferences_data.keys())}")
+                except Exception as e:
+                    print(f"⚠️ Could not auto-fill preferences: {e}")
+        
+        # Location is always set (either user's or default), so no need to check
+        
+        # Get all recommendations from real APIs - NOW WITH USER PREFERENCES!
+        results = get_all_recommendations(location, radius, max_results=20, user_preferences=user_preferences)
+        
+        # Combine for backward compatibility, but also send separately
+        all_recommendations = results['places'] + results['events']
+        
+        # If nothing found, provide helpful message based on the reason
+        if results['total'] == 0:
+            # Check if user has ANY preferences set
+            has_preferences = False
+            if user_preferences:
+                pref_fields = ['hobbies', 'workoutStyles', 'indoorActivities', 'outdoorActivities', 'cuisineTypes', 'hasDog', 'hasCat']
+                has_preferences = any(user_preferences.get(field) for field in pref_fields)
+            
+            if not has_preferences:
+                error_msg = f'No recommendations found. Set your preferences in AI Preferences to get personalized suggestions!'
+            else:
+                error_msg = f'No recommendations found near {location}. Try expanding your search radius or check API configuration.'
+            
+            return jsonify({
+                'success': True,
+                'recommendations': [],
+                'places': [],
+                'events': [],
+                'message': error_msg,
+                'count': 0,
+                'location': location,
+                'radius': radius,
+                'hasPreferences': has_preferences
+            })
+        
+        return jsonify({
+            'success': True,
+            'recommendations': all_recommendations,  # Combined list
+            'places': results['places'],  # Separate places
+            'events': results['events'],  # Separate events
+            'count': results['total'],
+            'placesCount': len(results['places']),
+            'eventsCount': len(results['events']),
+            'location': location,
+            'radius': radius,
+            'autoFilled': auto_filled  # Let frontend know preferences were auto-filled
+        })
+    
+    except Exception as e:
+        print(f"❌ Recommendations error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'recommendations': [],
+            'places': [],
+            'events': []
+        }), 500
+
+
 @app.route("/logout")
 def logout():
     """
@@ -3488,12 +6124,159 @@ def logout():
     resp.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return resp
 
+
+# ===== CRON API ENDPOINTS FOR VERCEL =====
+# These endpoints are designed to be triggered by Vercel Cron Jobs or external cron services
+# Background threads don't work on Vercel's serverless architecture
+
+@app.route("/api/cron/check-notifications", methods=['GET', 'POST'])
+def cron_check_notifications():
+    """
+    Cron endpoint to check and send task notifications.
+    
+    This endpoint should be triggered every 5 minutes by:
+    - Vercel Cron Jobs (configured in vercel.json), OR
+    - External cron service like cron-job.org
+    
+    Security: In production, verify the request comes from authorized source
+    
+    Returns:
+        JSON response with notification statistics
+    """
+    # Optional: Add authorization check for production
+    # auth_header = request.headers.get('Authorization')
+    # if auth_header != f"Bearer {os.getenv('CRON_SECRET')}":
+    #     return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        print("🔔 Cron job triggered: checking notifications")
+        
+        if not db:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available'
+            }), 500
+        
+        # Run the notification check
+        notifications_sent = check_and_send_notifications()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Notification check completed',
+            'notifications_sent': notifications_sent,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Cron error in check-notifications: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route("/api/cron/daily-summary", methods=['GET', 'POST'])
+def cron_daily_summary():
+    """
+    Cron endpoint to send daily summary emails.
+    
+    This endpoint should be triggered once daily at 8 PM by:
+    - Vercel Cron Jobs (configured in vercel.json), OR
+    - External cron service like cron-job.org
+    
+    Security: In production, verify the request comes from authorized source
+    
+    Returns:
+        JSON response with summary statistics
+    """
+    # Optional: Add authorization check for production
+    # auth_header = request.headers.get('Authorization')
+    # if auth_header != f"Bearer {os.getenv('CRON_SECRET')}":
+    #     return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        print("📊 Cron job triggered: sending daily summaries")
+        
+        if not db:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available'
+            }), 500
+        
+        # Run the daily summary
+        send_daily_summary()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Daily summary sent',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Cron error in daily-summary: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route("/api/cron/sporadic-inspiration", methods=['GET', 'POST'])
+def cron_sporadic_inspiration():
+    """
+    Cron endpoint to send sporadic inspiration messages.
+    
+    This endpoint should be triggered multiple times daily by:
+    - Vercel Cron Jobs (configured in vercel.json), OR
+    - External cron service like cron-job.org
+    
+    Security: In production, verify the request comes from authorized source
+    
+    Returns:
+        JSON response with summary statistics
+    """
+    # Optional: Add authorization check for production
+    # auth_header = request.headers.get('Authorization')
+    # if auth_header != f"Bearer {os.getenv('CRON_SECRET')}":
+    #     return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        print("✨ Cron job triggered: sending sporadic inspirations")
+        
+        if not db:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available'
+            }), 500
+        
+        # Run the sporadic inspiration
+        send_sporadic_inspiration()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sporadic inspiration sent',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Cron error in sporadic-inspiration: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == "__main__":
     print("Starting Daily Planner server...")
     print(f"Environment: {ENV}")
     print(f"Debug mode: {app.config['DEBUG']}")
     print(f"Email configured: {bool(SMTP_USERNAME and SMTP_PASSWORD)}")
-    print(f"SMS configured: {bool(twilio_client)}")
+    print(f"Push notifications: Available via Web Push API")
     print(f"Firebase configured: {bool(db)}")
     
     # Production vs Development server configuration

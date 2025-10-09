@@ -11,12 +11,17 @@ python-dotenv==1.0.0
 
 # Communications
 twilio==8.10.0
+pywebpush==1.14.0  # Web Push notifications
 
 # Task Scheduling
 schedule==1.2.0
 
 # HTTP Requests for external APIs
 requests==2.31.0
+
+# Web Scraping
+beautifulsoup4==4.12.2
+lxml==4.9.3
 
 # JWT Token Handling
 PyJWT==2.8.0

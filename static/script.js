@@ -13,7 +13,7 @@ const state = {
     notifications_enabled: false,
     notification_method: 'email',
     email: '',
-    phone: '',
+    // phone removed - SMS notifications disabled
     daily_summary: true,
     reminder_time: 30,
     auto_inspiration: true,
@@ -882,7 +882,7 @@ const notifications = {
   updateUI() {
     const enabledCheckbox = document.getElementById('notifications-enabled');
     const emailInput = document.getElementById('notification-email');
-    const phoneInput = document.getElementById('phone-number');
+    // phoneInput removed - SMS notifications disabled
     const methodCheckboxes = document.querySelectorAll('input[name="notification-methods"]');
     const dailySummaryCheckbox = document.getElementById('daily-summary');
     const reminderTimeSelect = document.getElementById('reminder-time');
@@ -913,9 +913,7 @@ const notifications = {
       emailInput.value = state.userSettings.email || '';
     }
 
-    if (phoneInput) {
-      phoneInput.value = state.userSettings.phone || '';
-    }
+    // Phone input removed - SMS notifications disabled
 
     // Handle multiple notification methods
     if (methodCheckboxes.length > 0) {
@@ -4219,7 +4217,7 @@ const assistant = {
     }
     
     const messageDiv = document.createElement('div');
-    messageDiv.classList.add('chat-message', sender);
+    messageDiv.classList.add('message', sender);
     
     const avatar = document.createElement('div');
     avatar.classList.add('message-avatar');
@@ -4245,7 +4243,7 @@ const assistant = {
   
   addTypingIndicator() {
     const typingDiv = document.createElement('div');
-    typingDiv.classList.add('chat-message', 'assistant', 'typing');
+    typingDiv.classList.add('message', 'assistant', 'typing');
     
     const avatar = document.createElement('div');
     avatar.classList.add('message-avatar');
@@ -4345,6 +4343,17 @@ const assistant = {
       }
     }
     
+    // Get recommended events from storage
+    let recommendedEvents = [];
+    try {
+      const eventsData = sessionStorage.getItem('current_recommendations');
+      if (eventsData) {
+        recommendedEvents = JSON.parse(eventsData);
+      }
+    } catch (e) {
+      console.error('Error loading event recommendations:', e);
+    }
+    
     return {
       currentDay: state.currentDay,
       currentDate: today.toDateString(),
@@ -4362,7 +4371,8 @@ const assistant = {
         description: task.description
       })),
       totalTasksThisWeek: dayTasks.length,
-      weather: weatherInfo
+      weather: weatherInfo,
+      recommendedEvents: recommendedEvents.length > 0 ? recommendedEvents : null
     };
   },
   
@@ -4686,6 +4696,12 @@ const initEventHandlers = () => {
   elements.settingsBtn.addEventListener('click', () => {
     notifications.loadSettings();
     ui.openModal(elements.settingsModal);
+    
+    // Hide preferences tooltip when settings is opened
+    const tooltip = document.getElementById('preferences-tooltip');
+    if (tooltip) {
+      tooltip.style.display = 'none';
+    }
   });
 
   // Weather button
@@ -4913,24 +4929,12 @@ const initEventHandlers = () => {
     });
   }
 
-  const phoneInput = document.getElementById('phone-number');
-  if (phoneInput) {
-    phoneInput.addEventListener('input', (e) => {
-      state.userSettings.phone = e.target.value;
-      // Add validation indicator
-      const statusElement = document.getElementById('phone-status');
-      if (statusElement) {
-        const isValid = e.target.value && e.target.value.length >= 10;
-        statusElement.textContent = isValid ? '✓' : '';
-        statusElement.style.color = isValid ? 'var(--success)' : '';
-      }
-    });
-  }
+  // Phone input removed - SMS notifications disabled
 
   // Multiple notification methods support
   const methodCheckboxes = document.querySelectorAll('input[name="notification-methods"]');
   methodCheckboxes.forEach(checkbox => {
-    checkbox.addEventListener('change', () => {
+    checkbox.addEventListener('change', async () => {
       // Get all selected methods
       const selectedMethods = Array.from(methodCheckboxes)
         .filter(cb => cb.checked)
@@ -4941,6 +4945,40 @@ const initEventHandlers = () => {
       
       // For backward compatibility, set primary method to first selected
       state.userSettings.notification_method = selectedMethods[0] || 'email';
+      
+      // Handle push notification subscription
+      if (selectedMethods.includes('push')) {
+        // User enabled push notifications
+        if (window.PushNotifications) {
+          // Initialize if not already done
+          if (!window.PushNotifications.isSupported) {
+            await window.PushNotifications.init();
+          }
+          
+          // Check if already subscribed
+          if (!window.PushNotifications.isSubscribed) {
+            console.log('📲 Subscribing to push notifications...');
+            const success = await window.PushNotifications.subscribe();
+            
+            if (success) {
+              ui.showNotification('🔔 Push notifications enabled! You\'ll receive browser alerts.', 'success');
+            } else {
+              ui.showNotification('⚠️ Failed to enable push notifications. Please check browser permissions.', 'error');
+              // Uncheck the push option
+              checkbox.checked = false;
+              const updatedMethods = selectedMethods.filter(m => m !== 'push');
+              state.userSettings.notification_methods = updatedMethods;
+              state.userSettings.notification_method = updatedMethods[0] || 'email';
+            }
+          }
+        }
+      } else {
+        // User disabled push notifications
+        if (window.PushNotifications && window.PushNotifications.isSubscribed) {
+          console.log('🔕 Unsubscribing from push notifications...');
+          await window.PushNotifications.unsubscribe();
+        }
+      }
       
       notifications.updateUI();
     });
@@ -5468,6 +5506,16 @@ const init = async () => {
   // Load theme immediately (before Firebase to avoid flash)
   utils.loadTheme();
   
+  // Initialize push notifications early
+  if (window.PushNotifications) {
+    try {
+      await window.PushNotifications.init();
+      console.log('✅ Push notifications initialized');
+    } catch (error) {
+      console.warn('⚠️ Push notifications init failed:', error);
+    }
+  }
+  
   // Try to load from Firebase first (primary storage)
   const firebaseLoaded = await utils.loadTasksFromFirebase();
   
@@ -5497,6 +5545,12 @@ const init = async () => {
   
   // Initialize class schedule
   await classSchedule.init();
+  
+  // Initialize AI preferences
+  preferencesManager.init();
+  
+  // Initialize event recommendations
+  recommendationsManager.init();
   
   initEventHandlers();
 
@@ -5703,6 +5757,16 @@ const classSchedule = {
     document.querySelectorAll('.settings-tab-content').forEach(content => {
       content.classList.toggle('active', content.id === `${tabName}-tab`);
     });
+
+    // Auto-detect location when switching to AI Preferences tab
+    if (tabName === 'preferences') {
+      const locationInput = document.getElementById('location-input');
+      // Only auto-detect if location is not already set
+      if (locationInput && (!locationInput.value || locationInput.value.trim() === '')) {
+        console.log('🎯 Auto-detecting location for AI Preferences...');
+        this.detectLocation();
+      }
+    }
   },
 
   async updateSemesterInfo() {
@@ -6331,6 +6395,1204 @@ const classSchedule = {
     }
   },
 };
+
+// ===== AI PREFERENCES MANAGER =====
+const preferencesManager = {
+  preferences: {
+    hobbies: [],
+    workoutStyles: [],
+    wakeTime: '07:00',
+    bedTime: '23:00',
+    eventCategories: [],
+    activityTypes: [],
+    maxTravelDistance: 10,
+    // NEW: Enhanced preference fields
+    hasDog: false,
+    hasCat: false,
+    cuisineTypes: [],
+    dietaryRestrictions: [],
+    indoorActivities: [],
+    outdoorActivities: [],
+    priceRange: ''
+  },
+
+  async init() {
+    console.log('🤖 Initializing Preferences Manager');
+    this.bindEvents();
+    await this.loadPreferences();
+    
+    // Auto-detect location on first load if not set
+    this.autoDetectLocationOnLoad();
+  },
+
+  bindEvents() {
+    // Tag inputs for hobbies, workouts, and events
+    this.setupTagInput('hobbies-input', 'hobbies-tags', 'hobbies');
+    this.setupTagInput('workout-input', 'workout-tags', 'workoutStyles');
+    this.setupTagInput('events-input', 'events-tags', 'eventCategories');
+    
+    // NEW: Tag inputs for cuisine, dietary, indoor, outdoor
+    this.setupTagInput('cuisine-input', 'cuisine-tags', 'cuisineTypes');
+    this.setupTagInput('dietary-input', 'dietary-tags', 'dietaryRestrictions');
+    this.setupTagInput('indoor-input', 'indoor-tags', 'indoorActivities');
+    this.setupTagInput('outdoor-input', 'outdoor-tags', 'outdoorActivities');
+
+    // Quick tag buttons
+    document.querySelectorAll('.quick-tag').forEach(tag => {
+      tag.addEventListener('click', (e) => {
+        const group = e.target.dataset.group;
+        const value = e.target.dataset.value;
+        this.addTag(group, value);
+      });
+    });
+    
+    // NEW: Pet preferences checkboxes
+    const hasDogCheckbox = document.getElementById('has-dog');
+    const hasCatCheckbox = document.getElementById('has-cat');
+    if (hasDogCheckbox) {
+      hasDogCheckbox.addEventListener('change', (e) => {
+        this.preferences.hasDog = e.target.checked;
+      });
+    }
+    if (hasCatCheckbox) {
+      hasCatCheckbox.addEventListener('change', (e) => {
+        this.preferences.hasCat = e.target.checked;
+      });
+    }
+    
+    // NEW: Price range select
+    const priceRangeSelect = document.getElementById('price-range');
+    if (priceRangeSelect) {
+      priceRangeSelect.addEventListener('change', (e) => {
+        this.preferences.priceRange = e.target.value;
+      });
+    }
+
+    // Event radius slider
+    const radiusSlider = document.getElementById('event-radius');
+    const radiusValue = document.getElementById('radius-value');
+    
+    if (radiusSlider && radiusValue) {
+      radiusSlider.addEventListener('input', (e) => {
+        const value = e.target.value;
+        radiusValue.textContent = value;
+        this.preferences.maxTravelDistance = parseInt(value);
+      });
+      
+      // Auto-save when user finishes adjusting (on 'change' event, not 'input')
+      radiusSlider.addEventListener('change', async (e) => {
+        const value = parseInt(e.target.value);
+        this.preferences.maxTravelDistance = value;
+        
+        // Save to backend silently (no notification)
+        await this.savePreferences(false);
+        
+        // Refresh recommendations with new radius
+        console.log(`🔄 Radius changed to ${value} miles - refreshing recommendations...`);
+        if (window.recommendationsManager && typeof window.recommendationsManager.loadRecommendations === 'function') {
+          window.recommendationsManager.loadRecommendations();
+        }
+      });
+    }
+
+    // Location input and detect button
+    const locationInput = document.getElementById('location-input');
+    const detectLocationBtn = document.getElementById('detect-location-btn');
+    
+    if (locationInput) {
+      // Update preferences when location is manually changed
+      locationInput.addEventListener('change', async (e) => {
+        const value = e.target.value.trim();
+        if (value) {
+          this.preferences.location = value;
+          // Save to backend silently
+          await this.savePreferences(false);
+          console.log(`📍 Location manually updated to: ${value}`);
+          
+          // Refresh recommendations with new location
+          if (window.recommendationsManager && typeof window.recommendationsManager.loadRecommendations === 'function') {
+            window.recommendationsManager.loadRecommendations();
+          }
+        }
+      });
+    }
+    
+    if (detectLocationBtn) {
+      detectLocationBtn.addEventListener('click', () => this.detectLocation());
+    }
+
+    // Save preferences button
+    const saveBtn = document.getElementById('save-preferences-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => this.savePreferences());
+    }
+
+    // Clear preferences button
+    const clearBtn = document.getElementById('clear-preferences-btn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => this.clearPreferences());
+    }
+
+    // Analyze behavior button
+    const analyzeBtn = document.getElementById('analyze-behavior-btn');
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', () => this.analyzeBehavior());
+    }
+
+    // Privacy mode toggle
+    const privacyToggle = document.getElementById('privacy-mode-toggle');
+    if (privacyToggle) {
+      privacyToggle.addEventListener('change', (e) => {
+        this.preferences.privacyMode = e.target.checked;
+        this.togglePrivacyMode(e.target.checked);
+      });
+    }
+
+    // Auto-fill preferences button
+    const autofillBtn = document.getElementById('autofill-preferences-btn');
+    if (autofillBtn) {
+      autofillBtn.addEventListener('click', () => this.autofillPreferences());
+    }
+
+    // Time inputs
+    const wakeTime = document.getElementById('wake-time');
+    const bedTime = document.getElementById('bed-time');
+
+    if (wakeTime) wakeTime.addEventListener('change', (e) => this.preferences.wakeTime = e.target.value);
+    if (bedTime) bedTime.addEventListener('change', (e) => this.preferences.bedTime = e.target.value);
+  },
+
+  async detectLocation() {
+    console.log('📍 Detecting user location...');
+    const locationInput = document.getElementById('location-input');
+    const detectBtn = document.getElementById('detect-location-btn');
+    
+    if (!locationInput) return;
+
+    // Check if geolocation is supported
+    if (!navigator.geolocation) {
+      ui.showNotification('❌ Geolocation is not supported by your browser', 'error');
+      return;
+    }
+
+    // Show loading state
+    if (detectBtn) {
+      detectBtn.disabled = true;
+      detectBtn.innerHTML = '<span style="opacity: 0.6;">Detecting...</span>';
+    }
+
+    try {
+      // Get user's position with high accuracy
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 15000,
+          enableHighAccuracy: true,
+          maximumAge: 0
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      console.log(`📍 High accuracy position: ${latitude}, ${longitude}`);
+
+      // Reverse geocode to get city name using OpenStreetMap Nominatim API
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'DailyPlannerApp/1.0'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to get location name');
+      }
+
+      const data = await response.json();
+      console.log('📍 Geocoding result:', data);
+
+      // Extract city and state/country with better priority
+      const address = data.address;
+      let location = '';
+      
+      // Priority: city > town > village > county
+      if (address.city) {
+        location = address.city;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.town) {
+        location = address.town;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.village) {
+        location = address.village;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.county) {
+        location = address.county;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      }
+
+      if (location) {
+        locationInput.value = location;
+        this.preferences.location = location;
+        
+        // Save location automatically
+        await this.savePreferences(false);
+        
+        ui.showNotification(`📍 Location detected: ${location}`, 'success');
+        console.log(`✅ Location set to: ${location}`);
+      } else {
+        throw new Error('Could not determine city name');
+      }
+
+    } catch (error) {
+      console.error('❌ Location detection error:', error);
+      
+      if (error.code === 1) {
+        ui.showNotification('❌ Location access denied. Please enable location permissions.', 'error');
+      } else if (error.code === 2) {
+        ui.showNotification('❌ Location unavailable. Please try again.', 'error');
+      } else if (error.code === 3) {
+        ui.showNotification('❌ Location request timeout. Please try again.', 'error');
+      } else {
+        ui.showNotification('❌ Failed to detect location. Please enter manually.', 'error');
+      }
+    } finally {
+      // Reset button
+      if (detectBtn) {
+        detectBtn.disabled = false;
+        detectBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="18" height="18">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+          </svg>
+          Detect
+        `;
+      }
+    }
+  },
+
+  async autoDetectLocationOnLoad() {
+    // Wait a bit for preferences to load
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Check if location is already set
+    if (this.preferences.location && this.preferences.location.trim() !== '') {
+      console.log(`📍 Location already set: ${this.preferences.location}`);
+      return;
+    }
+    
+    // Only auto-detect if geolocation is supported
+    if (!navigator.geolocation) {
+      console.log('📍 Geolocation not supported, skipping auto-detection');
+      return;
+    }
+    
+    console.log('📍 Auto-detecting location on page load...');
+    
+    try {
+      // Get user's position with high accuracy (silent - no UI updates)
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 15000,
+          enableHighAccuracy: true,
+          maximumAge: 0
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      console.log(`📍 High accuracy position detected: ${latitude}, ${longitude}`);
+
+      // Reverse geocode to get city name using OpenStreetMap Nominatim API
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'DailyPlannerApp/1.0'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to get location name');
+      }
+
+      const data = await response.json();
+      console.log('📍 Geocoding result:', data);
+
+      // Extract city and state with better priority
+      const address = data.address;
+      let location = '';
+      
+      // Priority: city > town > village > county
+      if (address.city) {
+        location = address.city;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.town) {
+        location = address.town;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.village) {
+        location = address.village;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      } else if (address.county) {
+        location = address.county;
+        if (address.state) {
+          location += `, ${address.state}`;
+        }
+      }
+
+      if (location) {
+        this.preferences.location = location;
+        
+        // Update location input if it exists
+        const locationInput = document.getElementById('location-input');
+        if (locationInput) {
+          locationInput.value = location;
+        }
+        
+        // Save location automatically (silent)
+        await this.savePreferences(false);
+        
+        console.log(`✅ Auto-detected location on load: ${location}`);
+      }
+
+    } catch (error) {
+      // Silent failure - don't bother user on page load
+      console.log('📍 Auto-detection on load failed (silent):', error.message || 'Unknown error');
+    }
+  },
+
+  setupTagInput(inputId, tagsDisplayId, preferenceKey) {
+    const input = document.getElementById(inputId);
+    const tagsDisplay = document.getElementById(tagsDisplayId);
+
+    if (!input || !tagsDisplay) return;
+
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const value = input.value.trim();
+        if (value) {
+          this.addTag(preferenceKey, value);
+          input.value = '';
+        }
+      }
+    });
+  },
+
+  addTag(group, value) {
+    let array;
+    let tagsDisplayId;
+
+    // Map group to preference key and display element
+    if (group === 'hobbies') {
+      array = this.preferences.hobbies;
+      tagsDisplayId = 'hobbies-tags';
+    } else if (group === 'workouts') {
+      array = this.preferences.workoutStyles;
+      tagsDisplayId = 'workout-tags';
+    } else if (group === 'events') {
+      array = this.preferences.eventCategories;
+      tagsDisplayId = 'events-tags';
+    } else if (group === 'cuisine') {
+      array = this.preferences.cuisineTypes;
+      tagsDisplayId = 'cuisine-tags';
+    } else if (group === 'dietary') {
+      array = this.preferences.dietaryRestrictions;
+      tagsDisplayId = 'dietary-tags';
+    } else if (group === 'indoor') {
+      array = this.preferences.indoorActivities;
+      tagsDisplayId = 'indoor-tags';
+    } else if (group === 'outdoor') {
+      array = this.preferences.outdoorActivities;
+      tagsDisplayId = 'outdoor-tags';
+    }
+
+    if (!array || !tagsDisplayId) return;
+
+    // Don't add duplicates
+    if (!array.includes(value)) {
+      array.push(value);
+      this.renderTags(tagsDisplayId, array, group);
+    }
+  },
+
+  removeTag(group, value) {
+    let array;
+    let tagsDisplayId;
+
+    if (group === 'hobbies') {
+      array = this.preferences.hobbies;
+      tagsDisplayId = 'hobbies-tags';
+    } else if (group === 'workouts') {
+      array = this.preferences.workoutStyles;
+      tagsDisplayId = 'workout-tags';
+    } else if (group === 'events') {
+      array = this.preferences.eventCategories;
+      tagsDisplayId = 'events-tags';
+    } else if (group === 'cuisine') {
+      array = this.preferences.cuisineTypes;
+      tagsDisplayId = 'cuisine-tags';
+    } else if (group === 'dietary') {
+      array = this.preferences.dietaryRestrictions;
+      tagsDisplayId = 'dietary-tags';
+    } else if (group === 'indoor') {
+      array = this.preferences.indoorActivities;
+      tagsDisplayId = 'indoor-tags';
+    } else if (group === 'outdoor') {
+      array = this.preferences.outdoorActivities;
+      tagsDisplayId = 'outdoor-tags';
+    }
+
+    if (!array || !tagsDisplayId) return;
+
+    const index = array.indexOf(value);
+    if (index > -1) {
+      array.splice(index, 1);
+      this.renderTags(tagsDisplayId, array, group);
+    }
+  },
+
+  renderTags(tagsDisplayId, tagsArray, group) {
+    const tagsDisplay = document.getElementById(tagsDisplayId);
+    if (!tagsDisplay) return;
+
+    tagsDisplay.innerHTML = tagsArray.map(tag => `
+      <span class="tag">
+        ${tag}
+        <button class="tag-remove" onclick="preferencesManager.removeTag('${group}', '${tag}')">&times;</button>
+      </span>
+    `).join('');
+  },
+
+  async loadPreferences() {
+    try {
+      const response = await utils.makeApiCall('/api/preferences', 'GET');
+      
+      if (response && response.preferences) {
+        this.preferences = {
+          ...this.preferences,
+          ...response.preferences
+        };
+
+        // Update UI - existing tags
+        this.renderTags('hobbies-tags', this.preferences.hobbies || [], 'hobbies');
+        this.renderTags('workout-tags', this.preferences.workoutStyles || [], 'workouts');
+        this.renderTags('events-tags', this.preferences.eventCategories || [], 'events');
+        
+        // NEW: Update UI - new tags
+        this.renderTags('cuisine-tags', this.preferences.cuisineTypes || [], 'cuisine');
+        this.renderTags('dietary-tags', this.preferences.dietaryRestrictions || [], 'dietary');
+        this.renderTags('indoor-tags', this.preferences.indoorActivities || [], 'indoor');
+        this.renderTags('outdoor-tags', this.preferences.outdoorActivities || [], 'outdoor');
+
+        const wakeTime = document.getElementById('wake-time');
+        const bedTime = document.getElementById('bed-time');
+        const radiusSlider = document.getElementById('event-radius');
+        const radiusValue = document.getElementById('radius-value');
+        const locationInput = document.getElementById('location-input');
+
+        if (wakeTime) wakeTime.value = this.preferences.wakeTime || '07:00';
+        if (bedTime) bedTime.value = this.preferences.bedTime || '23:00';
+        
+        // Update radius slider and display
+        const radius = this.preferences.maxTravelDistance || 10;
+        if (radiusSlider) radiusSlider.value = radius;
+        if (radiusValue) radiusValue.textContent = radius;
+        
+        // Update location input
+        if (locationInput && this.preferences.location) {
+          locationInput.value = this.preferences.location;
+        }
+        
+        // NEW: Update UI - checkboxes and selects
+        const hasDogCheckbox = document.getElementById('has-dog');
+        const hasCatCheckbox = document.getElementById('has-cat');
+        const priceRangeSelect = document.getElementById('price-range');
+        
+        if (hasDogCheckbox) hasDogCheckbox.checked = this.preferences.hasDog || false;
+        if (hasCatCheckbox) hasCatCheckbox.checked = this.preferences.hasCat || false;
+        if (priceRangeSelect) priceRangeSelect.value = this.preferences.priceRange || '';
+
+        // NEW: Handle privacy mode
+        const privacyToggle = document.getElementById('privacy-mode-toggle');
+        if (privacyToggle) {
+          privacyToggle.checked = this.preferences.privacyMode || false;
+          this.togglePrivacyMode(this.preferences.privacyMode || false);
+        }
+
+        console.log('✅ Preferences loaded successfully');
+        
+        // Check if user needs preferences tooltip
+        this.checkPreferencesTooltip();
+      }
+    } catch (error) {
+      console.error('❌ Error loading preferences:', error);
+    }
+  },
+
+  checkPreferencesTooltip() {
+    const tooltip = document.getElementById('preferences-tooltip');
+    if (!tooltip) return;
+
+    // Check if user has any preferences set
+    const hasPreferences = 
+      (this.preferences.hobbies && this.preferences.hobbies.length > 0) ||
+      (this.preferences.workoutStyles && this.preferences.workoutStyles.length > 0) ||
+      (this.preferences.eventCategories && this.preferences.eventCategories.length > 0) ||
+      (this.preferences.cuisineTypes && this.preferences.cuisineTypes.length > 0) ||
+      (this.preferences.dietaryRestrictions && this.preferences.dietaryRestrictions.length > 0) ||
+      (this.preferences.indoorActivities && this.preferences.indoorActivities.length > 0) ||
+      (this.preferences.outdoorActivities && this.preferences.outdoorActivities.length > 0);
+
+    // Show tooltip if no preferences, hide if preferences exist
+    if (!hasPreferences) {
+      setTimeout(() => {
+        tooltip.style.display = 'block';
+        tooltip.style.animation = 'fadeIn 0.3s ease-in-out';
+        console.log('👋 Showing preferences tooltip for new user');
+      }, 1000); // Show after 1 second delay
+    } else {
+      tooltip.style.display = 'none';
+      console.log('✅ User has preferences, hiding tooltip');
+    }
+  },
+
+  async savePreferences(showNotification = true) {
+    try {
+      const response = await utils.makeApiCall('/api/preferences', 'POST', this.preferences);
+      
+      if (response && response.success) {
+        if (showNotification) {
+          ui.showNotification('✅ Preferences saved successfully!', 'success');
+        }
+        console.log('✅ Preferences saved');
+      } else {
+        if (showNotification) {
+          ui.showNotification('❌ Failed to save preferences', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error saving preferences:', error);
+      if (showNotification) {
+        ui.showNotification('❌ Error saving preferences', 'error');
+      }
+    }
+  },
+
+  togglePrivacyMode(enabled) {
+    console.log(`🔒 Privacy mode: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    
+    // Show/hide privacy notice
+    const privacyNotice = document.getElementById('privacy-notice');
+    if (privacyNotice) {
+      privacyNotice.style.display = enabled ? 'block' : 'none';
+    }
+
+    // Hide/show preference fields container
+    const prefsContainer = document.getElementById('preference-fields-container');
+    if (prefsContainer) {
+      prefsContainer.style.display = enabled ? 'none' : 'block';
+    }
+
+    // Hide/show save button
+    const saveActions = document.getElementById('save-pref-actions');
+    if (saveActions) {
+      saveActions.style.display = enabled ? 'none' : 'flex';
+    }
+
+    // Hide/show autofill section
+    const autofillSection = document.getElementById('autofill-section');
+    if (autofillSection) {
+      autofillSection.style.display = enabled ? 'none' : 'block';
+    }
+
+    // Hide/show "For You" suggestions panel
+    const forYouPanel = document.querySelector('.recommendations-section');
+    if (forYouPanel) {
+      if (enabled) {
+        forYouPanel.style.display = 'none';
+      } else {
+        forYouPanel.style.display = '';
+      }
+    }
+
+    // Save the privacy mode setting silently
+    this.savePreferences(false);
+  },
+
+  async autofillPreferences() {
+    const btn = document.getElementById('autofill-preferences-btn');
+    const statusDiv = document.getElementById('autofill-status');
+    
+    if (!btn || !statusDiv) return;
+
+    try {
+      // Show loading state
+      btn.disabled = true;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="18" height="18" style="margin-right: 6px; animation: spin 1s linear infinite;">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="60" stroke-dashoffset="0"/>
+        </svg>
+        Analyzing...
+      `;
+
+      const response = await utils.makeApiCall('/api/autofill-preferences', 'POST', {});
+
+      if (response && response.success) {
+        // Show success message with discovered preferences
+        const discovered = response.discovered;
+        let message = `<strong>✨ Auto-Fill Complete!</strong><br>`;
+        
+        if (discovered.hobbies && discovered.hobbies.length > 0) {
+          message += `<br>🎯 Hobbies: ${discovered.hobbies.join(', ')}`;
+        }
+        if (discovered.workoutStyles && discovered.workoutStyles.length > 0) {
+          message += `<br>💪 Workouts: ${discovered.workoutStyles.join(', ')}`;
+        }
+        if (discovered.indoorActivities && discovered.indoorActivities.length > 0) {
+          message += `<br>🏛️ Indoor: ${discovered.indoorActivities.join(', ')}`;
+        }
+        if (discovered.outdoorActivities && discovered.outdoorActivities.length > 0) {
+          message += `<br>🌳 Outdoor: ${discovered.outdoorActivities.join(', ')}`;
+        }
+        if (discovered.cuisineTypes && discovered.cuisineTypes.length > 0) {
+          message += `<br>🍽️ Cuisines: ${discovered.cuisineTypes.join(', ')}`;
+        }
+        if (discovered.eventTypes && discovered.eventTypes.length > 0) {
+          message += `<br>🎭 Events: ${discovered.eventTypes.join(', ')}`;
+        }
+
+        statusDiv.querySelector('p').innerHTML = message;
+        statusDiv.style.display = 'block';
+
+        // Reload preferences to show updated data
+        setTimeout(() => {
+          this.loadPreferences();
+          ui.showNotification('✨ Preferences auto-filled successfully!', 'success');
+        }, 1000);
+
+      } else {
+        statusDiv.querySelector('p').innerHTML = `<strong>⚠️ ${response.message || 'Could not auto-fill preferences'}</strong>`;
+        statusDiv.querySelector('p').style.color = '#FFC107';
+        statusDiv.style.background = 'rgba(255,193,7,0.1)';
+        statusDiv.style.display = 'block';
+      }
+
+    } catch (error) {
+      console.error('❌ Auto-fill error:', error);
+      statusDiv.querySelector('p').innerHTML = `<strong>❌ Error:</strong> ${error.message || 'Failed to analyze tasks'}`;
+      statusDiv.querySelector('p').style.color = '#f44336';
+      statusDiv.style.background = 'rgba(244,67,54,0.1)';
+      statusDiv.style.display = 'block';
+    } finally {
+      // Reset button
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="18" height="18" style="margin-right: 6px;">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="currentColor"/>
+        </svg>
+        Auto-Fill
+      `;
+    }
+  },
+
+  async clearPreferences() {
+    if (!confirm('Are you sure you want to clear all preferences?')) return;
+
+    try {
+      const response = await utils.makeApiCall('/api/preferences', 'DELETE');
+      
+      if (response && response.success) {
+        // Reset local data
+        this.preferences = {
+          hobbies: [],
+          workoutStyles: [],
+          wakeTime: '07:00',
+          bedTime: '23:00',
+          eventCategories: [],
+          hasDog: false,
+          hasCat: false,
+          cuisineTypes: [],
+          dietaryRestrictions: [],
+          indoorActivities: [],
+          outdoorActivities: [],
+          priceRange: '',
+          maxTravelDistance: 10
+        };
+
+        // Clear UI - existing tags
+        this.renderTags('hobbies-tags', [], 'hobbies');
+        this.renderTags('workout-tags', [], 'workouts');
+        this.renderTags('events-tags', [], 'events');
+        
+        // Clear UI - new tags
+        this.renderTags('cuisine-tags', [], 'cuisine');
+        this.renderTags('dietary-tags', [], 'dietary');
+        this.renderTags('indoor-tags', [], 'indoor');
+        this.renderTags('outdoor-tags', [], 'outdoor');
+
+        document.getElementById('wake-time').value = '07:00';
+        document.getElementById('bed-time').value = '23:00';
+        
+        const radiusSlider = document.getElementById('event-radius');
+        const radiusValue = document.getElementById('radius-value');
+        if (radiusSlider) radiusSlider.value = 10;
+        if (radiusValue) radiusValue.textContent = 10;
+        
+        // Clear new fields
+        const hasDogCheckbox = document.getElementById('has-dog');
+        const hasCatCheckbox = document.getElementById('has-cat');
+        const priceRangeSelect = document.getElementById('price-range');
+        
+        if (hasDogCheckbox) hasDogCheckbox.checked = false;
+        if (hasCatCheckbox) hasCatCheckbox.checked = false;
+        if (priceRangeSelect) priceRangeSelect.value = '';
+
+        ui.showNotification('✅ Preferences cleared', 'success');
+      }
+    } catch (error) {
+      console.error('❌ Error clearing preferences:', error);
+      ui.showNotification('❌ Error clearing preferences', 'error');
+    }
+  },
+
+  async analyzeBehavior() {
+    const analyzeBtn = document.getElementById('analyze-behavior-btn');
+    const insightsDisplay = document.getElementById('behavior-insights');
+
+    if (!analyzeBtn || !insightsDisplay) return;
+
+    // Show loading state
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = '<span class="loading-spinner"></span> Analyzing...';
+
+    try {
+      const response = await utils.makeApiCall('/api/analyze-behavior', 'GET');
+      
+      if (response && response.insights) {
+        const insights = response.insights;
+        
+        // Display insights
+        insightsDisplay.style.display = 'block';
+        insightsDisplay.innerHTML = `
+          <div class="insights-card">
+            <h5>📊 Your Activity Insights</h5>
+            <div class="insight-row">
+              <strong>Total Tasks Analyzed:</strong> ${insights.taskCount}
+            </div>
+            <div class="insight-row">
+              <strong>Preferred Time:</strong> ${insights.preferredTime}
+            </div>
+            <div class="insight-row">
+              <strong>Top Activities:</strong>
+              <div class="activity-tags">
+                ${insights.topActivities.slice(0, 5).map(a => 
+                  `<span class="activity-tag">${a.keyword} (${a.count})</span>`
+                ).join('')}
+              </div>
+            </div>
+            <div class="insight-row">
+              <strong>Busiest Days:</strong>
+              ${insights.busiestDays.map(d => `${d.day} (${d.count})`).join(', ')}
+            </div>
+          </div>
+        `;
+
+        ui.showNotification('✅ Behavior analysis complete!', 'success');
+      }
+    } catch (error) {
+      console.error('❌ Error analyzing behavior:', error);
+      ui.showNotification('❌ Failed to analyze behavior', 'error');
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" stroke-width="2" fill="none"/>
+          <polyline points="7.5 4.21 12 6.81 16.5 4.21" stroke="currentColor" stroke-width="2" fill="none"/>
+          <polyline points="7.5 19.79 7.5 14.6 3 12" stroke="currentColor" stroke-width="2" fill="none"/>
+          <polyline points="21 12 16.5 14.6 16.5 19.79" stroke="currentColor" stroke-width="2" fill="none"/>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="currentColor" stroke-width="2" fill="none"/>
+          <line x1="12" y1="22.08" x2="12" y2="12" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        Analyze My Behavior
+      `;
+    }
+  }
+};
+
+// ===== Event Recommendations Manager =====
+const recommendationsManager = {
+  currentEvents: [], // Store current events for assistant access
+  
+  init() {
+    this.bindEvents();
+    this.loadRecommendations();
+    this.loadCollapseState();
+  },
+
+  bindEvents() {
+    const refreshBtn = document.getElementById('refresh-recommendations-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.loadRecommendations();
+      });
+    }
+
+    const toggleBtn = document.getElementById('toggle-recommendations-btn');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => this.toggleCollapse());
+    }
+  },
+
+  toggleCollapse() {
+    const section = document.getElementById('recommendations-section');
+    const content = document.getElementById('recommendations-content');
+    
+    if (!section || !content) return;
+
+    section.classList.toggle('collapsed');
+    
+    // Save state to localStorage
+    const isCollapsed = section.classList.contains('collapsed');
+    localStorage.setItem('recommendations_collapsed', isCollapsed);
+  },
+
+  loadCollapseState() {
+    const section = document.getElementById('recommendations-section');
+    
+    if (!section) return;
+
+    // Check saved state (default to collapsed to not block sidebar)
+    const savedState = localStorage.getItem('recommendations_collapsed');
+    const shouldCollapse = savedState === null ? true : savedState === 'true';
+    
+    if (shouldCollapse) {
+      section.classList.add('collapsed');
+    }
+  },
+
+  async loadRecommendations() {
+    console.log('🎯 Loading recommendations (places & events)...');
+    
+    const contentEl = document.getElementById('recommendations-content');
+    if (!contentEl) return;
+
+    // Show loading state
+    contentEl.innerHTML = `
+      <div class="loading-recommendations">
+        <div class="loading-spinner"></div>
+        <p>Finding places and events near you...</p>
+      </div>
+    `;
+
+    try {
+      // Fetch real places and events from backend APIs
+      const response = await utils.makeApiCall('/api/recommendations', 'GET');
+      
+      if (response && response.success) {
+        // New format: separate places and events arrays
+        const places = response.places || [];
+        const events = response.events || [];
+        const allRecommendations = [...places, ...events];
+        
+        // Check if preferences were auto-filled
+        if (response.autoFilled) {
+          ui.showNotification('✨ AI analyzed your tasks and discovered your preferences!', 'success');
+          // Reload preferences in the UI to show the auto-filled data
+          if (window.preferencesManager && typeof window.preferencesManager.loadPreferences === 'function') {
+            setTimeout(() => {
+              window.preferencesManager.loadPreferences();
+            }, 1000);
+          }
+        }
+        
+        // Store full recommendations object for assistant access (both places AND events)
+        this.currentRecommendations = {
+          places: places,
+          events: events,
+          total: allRecommendations.length,
+          location: response.location,
+          radius: response.radius
+        };
+        
+        // Also store legacy format for backward compatibility
+        this.currentEvents = allRecommendations;
+        
+        this.updateAssistantContext();
+
+        if (allRecommendations.length === 0) {
+          const message = response.message || 'Set your preferences in AI Preferences to see personalized suggestions';
+          this.showNoRecommendations(message);
+          return;
+        }
+
+        // Render all recommendation cards (both places and events)
+        contentEl.innerHTML = allRecommendations.map(item => this.createEventCard(item)).join('');
+
+        // Bind event card actions
+        this.bindEventActions();
+        
+        console.log(`✅ Loaded ${places.length} places and ${events.length} events near ${response.location || 'your location'}`);
+      } else {
+        const errorMsg = response?.error || 'Failed to load recommendations';
+        this.showNoRecommendations(errorMsg);
+      }
+    } catch (error) {
+      console.error('❌ Error loading recommendations:', error);
+      this.showNoRecommendations('Unable to fetch recommendations. Please try again.');
+    }
+  },
+
+  // Remove all mock event generation code below
+  async generateMockRecommendations() {
+    // This method is deprecated - now using real event scraping via /api/recommendations
+    console.warn('⚠️  generateMockRecommendations is deprecated. Using real event scraping instead.');
+  },
+
+  updateAssistantContext() {
+    // Store FULL recommendations context for assistant to access (both places AND events)
+    if (this.currentRecommendations) {
+      // Store the complete recommendations object with places and events separated
+      const fullContext = {
+        places: this.currentRecommendations.places.map(place => ({
+          title: place.title,
+          category: place.category,
+          icon: place.icon,
+          type: place.type,
+          distance: place.distance,
+          rating: place.rating,
+          price: place.price,
+          venue: place.venue,
+          date: place.date,
+          description: place.description,
+          website: place.website,
+          dog_friendly: place.dog_friendly
+        })),
+        events: this.currentRecommendations.events.map(event => ({
+          title: event.title,
+          category: event.category,
+          icon: event.icon,
+          type: event.type,
+          date: event.date,
+          time: event.time,
+          venue: event.venue,
+          distance: event.distance,
+          price: event.price,
+          description: event.description,
+          website: event.website,
+          is_online: event.is_online
+        })),
+        location: this.currentRecommendations.location,
+        radius: this.currentRecommendations.radius,
+        total: this.currentRecommendations.total
+      };
+      
+      // Store in sessionStorage for assistant to access
+      sessionStorage.setItem('current_recommendations', JSON.stringify(fullContext));
+      
+      const placesCount = fullContext.places.length;
+      const eventsCount = fullContext.events.length;
+      console.log(`📋 Updated assistant context with ${placesCount} places and ${eventsCount} events`);
+    } else if (this.currentEvents && this.currentEvents.length > 0) {
+      // Fallback for old format (backward compatibility)
+      const eventContext = this.currentEvents.map(event => ({
+        title: event.title,
+        category: event.category,
+        date: event.date,
+        time: event.time,
+        venue: event.venue,
+        price: event.price,
+        description: event.description,
+        website: event.website
+      }));
+      
+      sessionStorage.setItem('current_recommendations', JSON.stringify(eventContext));
+      console.log(`📋 Updated assistant context with ${eventContext.length} items (legacy format)`);
+    }
+  },
+
+  createEventCard(event) {
+    // Format distance properly
+    const distanceStr = typeof event.distance === 'number' 
+      ? `${event.distance} miles away` 
+      : event.distance;
+      
+    return `
+      <div class="event-card" data-event-id="${event.id}">
+        <div class="event-card-header">
+          <span class="event-icon">${event.icon}</span>
+          <div class="event-info">
+            <h4 class="event-title">${event.title}</h4>
+            <span class="event-category">${event.category}</span>
+          </div>
+        </div>
+        <div class="event-details">
+          <div class="event-detail-item">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
+              <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/>
+              <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/>
+              <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <span>${event.date}${event.time ? ` at ${event.time}` : ''}</span>
+          </div>
+          <div class="event-detail-item">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="2" fill="none"/>
+              <circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="2" fill="none"/>
+            </svg>
+            <span>${event.venue} • ${distanceStr}</span>
+          </div>
+        </div>
+        <div class="event-actions">
+          <button class="btn-add-event" data-event-id="${event.id}">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/>
+              <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            Add to Planner
+          </button>
+          <button class="btn-event-details" data-event-id="${event.id}">
+            Details
+          </button>
+        </div>
+      </div>
+    `;
+  },
+
+  bindEventActions() {
+    // Add to planner buttons
+    const addButtons = document.querySelectorAll('.btn-add-event');
+    addButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const eventId = btn.dataset.eventId;
+        this.addEventToPlanner(eventId);
+      });
+    });
+
+    // Details buttons
+    const detailButtons = document.querySelectorAll('.btn-event-details');
+    detailButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const eventId = btn.dataset.eventId;
+        this.showEventDetails(eventId);
+      });
+    });
+  },
+
+  async addEventToPlanner(eventId) {
+    // Find the event card
+    const card = document.querySelector(`.event-card[data-event-id="${eventId}"]`);
+    if (!card) return;
+
+    const title = card.querySelector('.event-title').textContent;
+    const dateTimeText = card.querySelectorAll('.event-detail-item span')[0].textContent;
+    const venue = card.querySelectorAll('.event-detail-item span')[1].textContent.split('•')[0].trim();
+
+    // Parse the date and time
+    // Format: "Oct 12, 2025 at 8:00 PM"
+    const [datePart, timePart] = dateTimeText.split(' at ');
+    
+    // Open task modal with pre-filled data
+    if (elements.taskModal) {
+      elements.taskModal.classList.add('active');
+      
+      // Fill in the task form
+      const titleInput = document.getElementById('task-title');
+      const descInput = document.getElementById('task-description');
+      const timeInput = document.getElementById('task-end-time');
+      
+      if (titleInput) titleInput.value = title;
+      if (descInput) descInput.value = `Event at ${venue}`;
+      
+      // Convert time to 24-hour format
+      if (timeInput && timePart) {
+        const time24 = this.convertTo24Hour(timePart.trim());
+        if (time24) timeInput.value = time24;
+      }
+      
+      ui.showNotification(`📅 Opening planner for: ${title}`, 'success');
+    }
+  },
+
+  convertTo24Hour(time12) {
+    const [time, period] = time12.split(' ');
+    let [hours, minutes] = time.split(':');
+    hours = parseInt(hours);
+
+    if (period === 'PM' && hours !== 12) {
+      hours += 12;
+    } else if (period === 'AM' && hours === 12) {
+      hours = 0;
+    }
+
+    return `${hours.toString().padStart(2, '0')}:${minutes}`;
+  },
+
+  showEventDetails(eventId) {
+    // Find the event in stored events
+    const event = this.currentEvents.find(e => e.id == eventId);
+    
+    if (!event) {
+      ui.showNotification('Event not found', 'error');
+      return;
+    }
+
+    // Open event website in new tab
+    if (event.website) {
+      window.open(event.website, '_blank', 'noopener,noreferrer');
+      ui.showNotification(`🌐 Opening ${event.title}...`, 'info');
+    } else {
+      ui.showNotification('No website available for this event', 'warning');
+    }
+  },
+
+  showNoRecommendations(message = null) {
+    const contentEl = document.getElementById('recommendations-content');
+    if (!contentEl) return;
+
+    contentEl.innerHTML = `
+      <div class="no-recommendations">
+        <svg viewBox="0 0 24 24" width="48" height="48">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+          <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/>
+        </svg>
+        <p>${message || 'No recommendations available yet'}</p>
+        <small>Set your preferences to get personalized event suggestions</small>
+      </div>
+    `;
+  }
+};
+
+// Preferences tooltip dismiss handler
+document.addEventListener('DOMContentLoaded', () => {
+  const tooltip = document.getElementById('preferences-tooltip');
+  if (tooltip) {
+    // Click to dismiss
+    tooltip.addEventListener('click', () => {
+      tooltip.style.animation = 'fadeOut 0.3s ease-in-out';
+      setTimeout(() => {
+        tooltip.style.display = 'none';
+      }, 300);
+    });
+  }
+});
 
 // Start the app
 document.addEventListener('DOMContentLoaded', init);

@@ -14,6 +14,20 @@
       "dest": "planner.py"
     }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/check-notifications",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-summary",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/sporadic-inspiration",
+      "schedule": "30 9,11,14,16,18 * * *"
+    }
+  ],
   "env": {
     "FLASK_ENV": "production"
   }

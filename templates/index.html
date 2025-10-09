@@ -125,6 +125,31 @@
                     </div>
                 </li>
             </ul>
+
+            <!-- Event Recommendations Section -->
+            <div class="recommendations-section" id="recommendations-section">
+                <div class="recommendations-header">
+                    <button class="toggle-recommendations" id="toggle-recommendations-btn" title="Toggle Recommendations">
+                        <h3>For You</h3>
+                        <svg class="toggle-icon" viewBox="0 0 24 24" width="18" height="18">
+                            <polyline points="6 9 12 15 18 9" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                    <button class="icon-btn refresh-recommendations" id="refresh-recommendations-btn" title="Refresh Recommendations">
+                        <svg viewBox="0 0 24 24" width="16" height="16">
+                            <polyline points="23 4 23 10 17 10" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <polyline points="1 20 1 14 7 14" stroke="currentColor" stroke-width="2" fill="none"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="recommendations-content" id="recommendations-content">
+                    <div class="loading-recommendations">
+                        <div class="loading-spinner"></div>
+                        <p>Loading recommendations...</p>
+                    </div>
+                </div>
+            </div>
         </aside>
 
         <!-- Main Content -->
@@ -163,6 +188,14 @@
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" fill="none"/>
                         </svg>
                     </button>
+                    
+                    <!-- Preferences Tooltip (shows when user has no preferences) -->
+                    <div id="preferences-tooltip" class="preferences-tooltip" style="display: none;">
+                        <div class="tooltip-content">
+                            👋 Add your personal preferences here!
+                        </div>
+                        <div class="tooltip-arrow"></div>
+                    </div>
 
                     <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
                         <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20">
@@ -388,9 +421,7 @@
             <div class="settings-header">
                 <div class="header-info">
                     <div class="header-icon">
-                        <svg viewBox="0 0 24 24" width="28" height="28">
-                            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z" fill="currentColor"/>
-                        </svg>
+                        ⚙️
                     </div>
                     <div class="header-text">
                         <h2>Settings</h2>
@@ -398,30 +429,22 @@
                     </div>
                 </div>
                 <button class="close-btn" type="button" aria-label="Close">
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
-                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
-                    </svg>
+                    ✕
                 </button>
             </div>
             
             <!-- Settings Tab Navigation -->
             <div class="settings-tabs">
                 <button class="settings-tab-btn active" data-tab="notifications">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2" fill="none"/>
-                        <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" fill="none"/>
-                    </svg>
+                    🔔
                     <span>Notifications</span>
                 </button>
+                <button class="settings-tab-btn" data-tab="preferences">
+                    ⭐
+                    <span>AI Preferences</span>
+                </button>
                 <button class="settings-tab-btn" data-tab="classes">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
-                        <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/>
-                        <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/>
-                        <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
-                        <rect x="7" y="14" width="3" height="3" rx="0.5" stroke="currentColor" stroke-width="1" fill="currentColor"/>
-                    </svg>
+                    📅
                     <span>Class Schedule</span>
                 </button>
             </div>
@@ -434,7 +457,9 @@
                         <div class="toggle-card">
                             <div class="toggle-main">
                                 <div class="toggle-info">
-                                    <div class="toggle-icon">🔔</div>
+                                    <div class="toggle-icon">
+                                        🔔
+                                    </div>
                                     <div class="toggle-details">
                                         <h3>Smart Notifications</h3>
                                         <p>Get reminded about your tasks and daily progress</p>
@@ -462,27 +487,19 @@
                     <!-- Contact Information -->
                     <div class="settings-section">
                         <div class="section-header">
-                            <h4>� Contact Information</h4>
+                            <h4>📧 Contact Information</h4>
                             <p>Choose how you'd like to receive notifications</p>
                         </div>
                         
                         <div class="form-group">
                             <label for="notification-email">Email Address</label>
                             <div class="input-field">
-                                <span class="input-icon">📧</span>
+                                <span class="input-icon">
+                                    📧
+                                </span>
                                 <input type="email" id="notification-email" placeholder="your.email@example.com" />
                                 <span class="field-status" id="email-status"></span>
                             </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="phone-number">Phone Number</label>
-                            <div class="input-field">
-                                <span class="input-icon">📱</span>
-                                <input type="tel" id="phone-number" placeholder="+1 (555) 123-4567" />
-                                <span class="field-status" id="phone-status"></span>
-                            </div>
-                            <p class="field-hint">Include country code for SMS notifications</p>
                         </div>
                     </div>
 
@@ -495,33 +512,33 @@
                         
                         <div class="method-grid">
                             <label class="method-option">
-                                <input type="checkbox" name="notification-methods" value="email" id="method-email" />
+                                <input type="checkbox" name="notification-methods" value="email" id="method-email" checked />
                                 <div class="method-card">
-                                    <div class="method-icon">📧</div>
+                                    <div class="method-icon">
+                                        📧
+                                    </div>
                                     <div class="method-info">
                                         <h5>Email</h5>
                                         <p>Rich notifications with task details</p>
                                     </div>
                                     <div class="method-check">
-                                        <svg viewBox="0 0 24 24" width="16" height="16">
-                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z" fill="currentColor"/>
-                                        </svg>
+                                        ✓
                                     </div>
                                 </div>
                             </label>
                             
                             <label class="method-option">
-                                <input type="checkbox" name="notification-methods" value="sms" id="method-sms" />
+                                <input type="checkbox" name="notification-methods" value="push" id="method-push" />
                                 <div class="method-card">
-                                    <div class="method-icon">📱</div>
+                                    <div class="method-icon">
+                                        🔔
+                                    </div>
                                     <div class="method-info">
-                                        <h5>SMS</h5>
-                                        <p>Quick text message alerts</p>
+                                        <h5>Push Notifications</h5>
+                                        <p>Browser alerts even when app is closed</p>
                                     </div>
                                     <div class="method-check">
-                                        <svg viewBox="0 0 24 24" width="16" height="16">
-                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17Z" fill="currentColor"/>
-                                        </svg>
+                                        ✓
                                     </div>
                                 </div>
                             </label>
@@ -531,7 +548,9 @@
                     <!-- Preferences -->
                     <div class="settings-section">
                         <div class="section-header">
-                            <h4>⚙️ Preferences</h4>
+                            <h4>
+                                ⚙️ Preferences
+                            </h4>
                             <p>Customize when and what notifications you receive</p>
                         </div>
                         
@@ -539,11 +558,7 @@
                         <div class="notification-timing-section">
                             <div class="timing-section-header">
                                 <h4>
-                                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                                        <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
-                                        <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
-                                    </svg>
-                                    Notification Timing
+                                    ⏰ Notification Timing
                                 </h4>
                                 <p>Customize when you receive task reminders and daily summaries</p>
                             </div>
@@ -551,18 +566,11 @@
                             <div class="reminder-times-container">
                                 <div class="reminder-times-header">
                                     <h5>
-                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
-                                            <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
-                                        </svg>
-                                        Reminder Times
+                                        ⏰ Reminder Times
                                     </h5>
                                     <div class="add-reminder-dropdown">
                                         <button id="add-reminder-btn" class="add-reminder-btn">
-                                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-                                            </svg>
-                                            Add Reminder
+                                            ➕ Add Reminder
                                         </button>
                                         <div class="add-reminder-menu">
                                             <div class="add-reminder-quick-options">
@@ -599,21 +607,14 @@
                             <div class="daily-summary-container">
                                 <div class="daily-summary-header">
                                     <h5>
-                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
-                                            <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
-                                        </svg>
-                                        Daily Summary Time
+                                        📝 Daily Summary Time
                                     </h5>
                                     <p>Choose when to receive your daily task summary</p>
                                 </div>
                                 
                                 <div class="daily-summary-time-selector">
                                     <label for="daily-summary-time">
-                                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M6 .5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H9v1.07a7.001 7.001 0 0 1 3.274 12.474l-.161.161a.5.5 0 0 1-.707-.707l.161-.161A6.001 6.001 0 1 0 9 2.07V3h.5a.5.5 0 0 1 0 1h-3a.5.5 0 0 1 0-1H7V1h-.5A.5.5 0 0 1 6 .5zm2.5 5.034V5.5a.5.5 0 0 1 1 0v2.535l1.933.966a.5.5 0 0 1-.466.932l-2.1-1.05A.5.5 0 0 1 8.5 7.87V5.534z"/>
-                                        </svg>
-                                        Send daily summary at:
+                                        ⏰ Send daily summary at:
                                     </label>
                                     <input type="time" id="daily-summary-time" value="23:30" />
                                 </div>
@@ -639,7 +640,7 @@
 
                             <div class="preference-item">
                                 <div class="pref-info">
-                                    <div class="pref-icon">�</div>
+                                    <div class="pref-icon">✨</div>
                                     <div class="pref-details">
                                         <h5>Auto Inspiration</h5>
                                         <p>Receive sporadic motivational messages throughout the day</p>
@@ -706,13 +707,17 @@
                     <!-- Test Section -->
                     <div class="settings-section">
                         <div class="section-header">
-                            <h4>🧪 Test Your Setup</h4>
+                            <h4>
+                                🧪 Test Your Setup
+                            </h4>
                             <p>Make sure everything works perfectly</p>
                         </div>
                         
                         <div class="test-actions">
                             <button type="button" id="test-notification-btn" class="test-btn">
-                                <span class="btn-icon">🔗</span>
+                                <span class="btn-icon">
+                                    ✅
+                                </span>
                                 <span class="btn-text">
                                     <strong>Connection Test</strong>
                                     <small>Verify your settings</small>
@@ -720,7 +725,9 @@
                             </button>
 
                             <button type="button" id="test-task-reminder-btn" class="test-btn">
-                                <span class="btn-icon">⏰</span>
+                                <span class="btn-icon">
+                                    ⏰
+                                </span>
                                 <span class="btn-text">
                                     <strong>Task Reminder</strong>
                                     <small>Preview format</small>
@@ -728,7 +735,9 @@
                             </button>
 
                             <button type="button" id="test-daily-summary-btn" class="test-btn">
-                                <span class="btn-icon">📊</span>
+                                <span class="btn-icon">
+                                    📊
+                                </span>
                                 <span class="btn-text">
                                     <strong>Daily Summary</strong>
                                     <small>Preview email</small>
@@ -750,11 +759,334 @@
                 </div>
                 </div> <!-- End notifications tab -->
 
+                <!-- AI Preferences Tab Content -->
+                <div class="settings-tab-content" id="preferences-tab">
+                    <div class="preferences-section">
+                        <div class="section-header">
+                            <h4>
+                                🤖 AI Preferences & Learning
+                            </h4>
+                            <p>Tell us about your interests so we can provide personalized recommendations</p>
+                        </div>
+
+                        <!-- Privacy & Auto-fill Controls -->
+                        <div class="pref-group" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <div>
+                                    <label style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px; display: block;">
+                                        🔒 Privacy Mode
+                                    </label>
+                                    <p class="pref-hint" style="margin: 0;">Disable all preference tracking and personalized suggestions</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="privacy-mode-toggle" aria-label="Enable privacy mode" />
+                                    <span class="switch-track">
+                                        <span class="switch-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div id="privacy-notice" style="display: none; background: rgba(255,193,7,0.1); border-left: 3px solid #FFC107; padding: 12px; border-radius: 6px; margin-top: 12px;">
+                                <p style="margin: 0; font-size: 13px; color: #FFC107;">
+                                    🔒 <strong>Privacy Mode Active:</strong> We won't track your preferences or task patterns. The "For You" suggestions panel is hidden.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Auto-fill from Tasks -->
+                        <div class="pref-group" id="autofill-section" style="background: rgba(76,175,80,0.05); border: 1px solid rgba(76,175,80,0.2); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <label style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px; display: block;">
+                                        ✨ Auto-Fill Preferences
+                                    </label>
+                                    <p class="pref-hint" style="margin: 0;">Let AI analyze your past tasks to discover what you enjoy and automatically fill in your preferences</p>
+                                </div>
+                                <button class="btn-primary" id="autofill-preferences-btn" style="margin-left: 15px; white-space: nowrap; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; transition: all 0.3s ease;">
+                                    ⚡ Auto-Fill
+                                </button>
+                            </div>
+                            <div id="autofill-status" style="display: none; margin-top: 12px; padding: 10px; background: rgba(76,175,80,0.1); border-radius: 6px;">
+                                <p style="margin: 0; font-size: 13px; color: #4CAF50;"></p>
+                            </div>
+                        </div>
+
+                        <!-- Preference Fields Container (hidden when privacy mode is on) -->
+                        <div id="preference-fields-container">
+
+                        <!-- LOCATION & SEARCH SECTION -->
+                        <div class="pref-category-header">
+                            <h5>📍 Location & Search Radius</h5>
+                            <p>Set your location to discover nearby places and events</p>
+                        </div>
+
+                        <!-- Location Input -->
+                        <div class="pref-group">
+                            <label for="location-input">Your Location</label>
+                            <p class="pref-hint">We'll use this to find nearby places and events</p>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <input 
+                                    type="text" 
+                                    id="location-input" 
+                                    placeholder="e.g., New York, NY" 
+                                    style="flex: 1; padding: 10px; border: 1px solid rgba(148,163,184,0.3); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary);"
+                                />
+                                <button 
+                                    type="button" 
+                                    id="detect-location-btn" 
+                                    class="btn-secondary"
+                                    style="padding: 10px 15px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px;"
+                                >
+                                    <svg viewBox="0 0 24 24" width="18" height="18">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                                        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                                    </svg>
+                                    Detect
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Event Search Radius -->
+                        <div class="pref-group">
+                            <label for="event-radius">Search Radius</label>
+                            <p class="pref-hint">How far are you willing to travel for activities?</p>
+                            <div class="radius-selector">
+                                <input type="range" id="event-radius" min="1" max="20" value="10" step="1" class="radius-slider" />
+                                <div class="radius-display">
+                                    <span id="radius-value">10</span> miles
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Daily Schedule -->
+                        <div class="pref-group">
+                            <label>⏰ Daily Schedule</label>
+                            <p class="pref-hint">When do you typically wake up and go to bed?</p>
+                            <div class="schedule-inputs">
+                                <div class="schedule-item">
+                                    <label for="wake-time">Wake Up Time</label>
+                                    <input type="time" id="wake-time" value="07:00" />
+                                </div>
+                                <div class="schedule-item">
+                                    <label for="bed-time">Bedtime</label>
+                                    <input type="time" id="bed-time" value="23:00" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- FOOD & DINING SECTION -->
+                        <div class="pref-category-header" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.1);">
+                            <h5>🍽️ Food & Dining</h5>
+                            <p>Your culinary preferences and dining habits</p>
+                        </div>
+
+                        <!-- Cuisine Preferences -->
+                        <div class="pref-group">
+                            <label>Favorite Cuisines</label>
+                            <p class="pref-hint">What types of food do you enjoy? (press Enter after each)</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="cuisine-tags"></div>
+                                <input type="text" id="cuisine-input" class="tag-input" placeholder="e.g., Italian, Thai, Mexican..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="cuisine" data-value="italian">🍝 Italian</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="mexican">🌮 Mexican</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="chinese">🥡 Chinese</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="japanese">🍱 Japanese</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="thai">🍜 Thai</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="indian">🍛 Indian</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="american">🍔 American</span>
+                                <span class="quick-tag" data-group="cuisine" data-value="mediterranean">🥙 Mediterranean</span>
+                            </div>
+                        </div>
+
+                        <!-- Dietary Restrictions -->
+                        <div class="pref-group">
+                            <label>Dietary Restrictions</label>
+                            <p class="pref-hint">Any dietary needs or preferences? (press Enter after each)</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="dietary-tags"></div>
+                                <input type="text" id="dietary-input" class="tag-input" placeholder="e.g., vegetarian, gluten-free..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="dietary" data-value="vegetarian">🥗 Vegetarian</span>
+                                <span class="quick-tag" data-group="dietary" data-value="vegan">🌱 Vegan</span>
+                                <span class="quick-tag" data-group="dietary" data-value="gluten-free">🌾 Gluten-Free</span>
+                                <span class="quick-tag" data-group="dietary" data-value="dairy-free">🥛 Dairy-Free</span>
+                                <span class="quick-tag" data-group="dietary" data-value="halal">☪️ Halal</span>
+                                <span class="quick-tag" data-group="dietary" data-value="kosher">✡️ Kosher</span>
+                            </div>
+                        </div>
+
+                        <!-- Pet Friendly Preferences -->
+                        <div class="pref-group">
+                            <label>Pet-Friendly Dining</label>
+                            <p class="pref-hint">Do you prefer pet-friendly restaurants?</p>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="has-dog" />
+                                    <span>🐕 I have a dog</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="has-cat" />
+                                    <span>🐈 I have a cat</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Price Range -->
+                        <div class="pref-group">
+                            <label>Price Range Preference</label>
+                            <p class="pref-hint">What's your typical dining budget?</p>
+                            <select id="price-range" class="pref-select">
+                                <option value="">Any Price Range</option>
+                                <option value="1">💰 Budget-Friendly ($)</option>
+                                <option value="2">💰💰 Moderate ($$)</option>
+                                <option value="3">💰💰💰 Upscale ($$$)</option>
+                                <option value="4">💰💰💰💰 Fine Dining ($$$$)</option>
+                            </select>
+                        </div>
+
+                        <!-- INTERESTS & HOBBIES SECTION -->
+                        <div class="pref-category-header" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.1);">
+                            <h5>🎯 Interests & Hobbies</h5>
+                            <p>Help us understand what you love to do</p>
+                        </div>
+
+                        <!-- Hobbies & Interests -->
+                        <div class="pref-group">
+                            <label>Hobbies & Interests</label>
+                            <p class="pref-hint">Add activities you enjoy (press Enter after each)</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="hobbies-tags"></div>
+                                <input type="text" id="hobbies-input" class="tag-input" placeholder="e.g., basketball, painting, reading..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="hobbies" data-value="basketball">🏀 Basketball</span>
+                                <span class="quick-tag" data-group="hobbies" data-value="soccer">⚽ Soccer</span>
+                                <span class="quick-tag" data-group="hobbies" data-value="reading">📚 Reading</span>
+                                <span class="quick-tag" data-group="hobbies" data-value="painting">🎨 Painting</span>
+                                <span class="quick-tag" data-group="hobbies" data-value="gaming">🎮 Gaming</span>
+                                <span class="quick-tag" data-group="hobbies" data-value="cooking">🍳 Cooking</span>
+                            </div>
+                        </div>
+
+                        <!-- WELLNESS & FITNESS SECTION -->
+                        <div class="pref-category-header" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.1);">
+                            <h5>💪 Wellness & Fitness</h5>
+                            <p>Your fitness and workout preferences</p>
+                        </div>
+
+                        <!-- Workout Styles -->
+                        <div class="pref-group">
+                            <label>Workout Styles</label>
+                            <p class="pref-hint">What types of exercise do you prefer?</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="workout-tags"></div>
+                                <input type="text" id="workout-input" class="tag-input" placeholder="e.g., cardio, strength training..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="workouts" data-value="cardio">💓 Cardio</span>
+                                <span class="quick-tag" data-group="workouts" data-value="strength">💪 Strength</span>
+                                <span class="quick-tag" data-group="workouts" data-value="yoga">🧘 Yoga</span>
+                                <span class="quick-tag" data-group="workouts" data-value="hiit">🔥 HIIT</span>
+                                <span class="quick-tag" data-group="workouts" data-value="pilates">🤸 Pilates</span>
+                                <span class="quick-tag" data-group="workouts" data-value="running">🏃 Running</span>
+                            </div>
+                        </div>
+
+                        <!-- ACTIVITIES SECTION -->
+                        <div class="pref-category-header" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.1);">
+                            <h5>🎪 Activities</h5>
+                            <p>Indoor and outdoor activities you enjoy</p>
+                        </div>
+
+                        <!-- Indoor Activities -->
+                        <div class="pref-group">
+                            <label>Indoor Activities</label>
+                            <p class="pref-hint">What indoor activities do you enjoy?</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="indoor-tags"></div>
+                                <input type="text" id="indoor-input" class="tag-input" placeholder="e.g., museums, shopping..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="indoor" data-value="museums">🏛️ Museums</span>
+                                <span class="quick-tag" data-group="indoor" data-value="shopping">🛍️ Shopping</span>
+                                <span class="quick-tag" data-group="indoor" data-value="theaters">🎭 Theaters</span>
+                                <span class="quick-tag" data-group="indoor" data-value="arcades">🕹️ Arcades</span>
+                                <span class="quick-tag" data-group="indoor" data-value="bowling">🎳 Bowling</span>
+                                <span class="quick-tag" data-group="indoor" data-value="climbing">🧗 Indoor Climbing</span>
+                                <span class="quick-tag" data-group="indoor" data-value="escape-rooms">🔐 Escape Rooms</span>
+                            </div>
+                        </div>
+
+                        <!-- Outdoor Activities -->
+                        <div class="pref-group">
+                            <label>Outdoor Activities</label>
+                            <p class="pref-hint">What outdoor activities do you like?</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="outdoor-tags"></div>
+                                <input type="text" id="outdoor-input" class="tag-input" placeholder="e.g., hiking, beach..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="outdoor" data-value="hiking">🥾 Hiking</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="beach">🏖️ Beach</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="parks">🌳 Parks</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="cycling">🚴 Cycling</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="kayaking">🛶 Kayaking</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="camping">⛺ Camping</span>
+                                <span class="quick-tag" data-group="outdoor" data-value="fishing">🎣 Fishing</span>
+                            </div>
+                        </div>
+
+                        <!-- EVENTS & ENTERTAINMENT SECTION -->
+                        <div class="pref-category-header" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.1);">
+                            <h5>🎭 Events & Entertainment</h5>
+                            <p>What kind of events do you like to attend?</p>
+                        </div>
+
+                        <!-- Event Categories -->
+                        <div class="pref-group">
+                            <label>Favorite Event Types</label>
+                            <p class="pref-hint">What kind of events interest you?</p>
+                            <div class="tag-input-container">
+                                <div class="tags-display" id="events-tags"></div>
+                                <input type="text" id="events-input" class="tag-input" placeholder="e.g., concerts, sports games..." />
+                            </div>
+                            <div class="quick-tags">
+                                <span class="quick-tag" data-group="events" data-value="concerts">🎵 Concerts</span>
+                                <span class="quick-tag" data-group="events" data-value="sports">⚽ Sports</span>
+                                <span class="quick-tag" data-group="events" data-value="theater">🎭 Theater</span>
+                                <span class="quick-tag" data-group="events" data-value="comedy">😂 Comedy</span>
+                                <span class="quick-tag" data-group="events" data-value="festivals">🎪 Festivals</span>
+                                <span class="quick-tag" data-group="events" data-value="community">👥 Community</span>
+                            </div>
+                        </div>
+
+
+                        </div> <!-- End preference-fields-container -->
+
+                        <!-- Save Preferences Button -->
+                        <div class="pref-actions" id="save-pref-actions">
+                            <button class="btn-primary" id="save-preferences-btn">
+                                <svg viewBox="0 0 24 24" width="18" height="18">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <polyline points="17 21 17 13 7 13 7 21" stroke="currentColor" stroke-width="2" fill="none"/>
+                                    <polyline points="7 3 7 8 15 8" stroke="currentColor" stroke-width="2" fill="none"/>
+                                </svg>
+                                Save Preferences
+                            </button>
+                            <button class="btn-secondary" id="clear-preferences-btn">Clear All</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Class Schedule Tab Content -->
                 <div class="settings-tab-content" id="classes-tab">
                     <div class="class-schedule-section">
                         <div class="section-header">
-                            <h4>📚 Class Schedule Management</h4>
+                            <h4>
+                                📅 Class Schedule Management
+                            </h4>
                             <p>Set up your semester and automatically add classes to your planner</p>
                         </div>
 
@@ -782,15 +1114,10 @@
                         <!-- Break Periods -->
                         <div class="break-periods-section">
                             <div class="section-sub-header">
-                                <h5>Break Periods (Optional)</h5>
+                                <h5>☕ Break Periods (Optional)</h5>
                                 <p>Classes won't be scheduled during these periods</p>
                                 <button type="button" class="btn-add-break" id="add-break-btn">
-                                    <svg viewBox="0 0 24 24" width="16" height="16">
-                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
-                                        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="2"/>
-                                        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2"/>
-                                    </svg>
-                                    Add Break
+                                    ➕ Add Break
                                 </button>
                             </div>
                             <div class="break-periods-list" id="break-periods-list">
@@ -801,15 +1128,10 @@
                         <!-- Class Schedule -->
                         <div class="class-schedule-management">
                             <div class="section-sub-header">
-                                <h5>Classes</h5>
+                                <h5>📚 Classes</h5>
                                 <p>Add your recurring classes for the semester</p>
                                 <button type="button" class="btn-add-class" id="add-class-btn">
-                                    <svg viewBox="0 0 24 24" width="16" height="16">
-                                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
-                                        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="2"/>
-                                        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2"/>
-                                    </svg>
-                                    Add Class
+                                    ➕ Add Class
                                 </button>
                             </div>
                             <div class="classes-list" id="classes-list">
@@ -820,21 +1142,10 @@
                         <!-- Generation Actions -->
                         <div class="generation-actions">
                             <button type="button" class="btn-generate-schedule" id="generate-schedule-btn">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M14.828 10.828a4 4 0 0 0-5.656 0 4 4 0 0 0 0 5.656l5.656-5.656z" stroke="currentColor" stroke-width="2" fill="none"/>
-                                    <path d="M9.172 13.172a4 4 0 0 0 5.656 0 4 4 0 0 0 0-5.656l-5.656 5.656z" stroke="currentColor" stroke-width="2" fill="none"/>
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
-                                </svg>
-                                Generate Class Schedule
+                                ✨ Generate Class Schedule
                             </button>
                             <button type="button" class="btn-clear-schedule" id="clear-schedule-btn">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="2" fill="none"/>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" fill="none"/>
-                                    <line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" stroke-width="2"/>
-                                    <line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" stroke-width="2"/>
-                                </svg>
-                                Clear Generated Classes
+                                🗑️ Clear Generated Classes
                             </button>
                         </div>
                     </div>
@@ -849,10 +1160,7 @@
                         <span>Sign Out</span>
                     </button>
                     <button type="button" id="save-settings-btn" class="save-btn">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3M19 19H5V5H16.17L19 7.83V19M12 12C13.1 12 14 12.9 14 14S13.1 16 12 16 10 15.1 10 14 10.9 12 12 12M6 6H15V10H6V6Z" fill="currentColor"/>
-                        </svg>
-                        <span>Save Settings</span>
+                        💾 <span>Save Settings</span>
                     </button>
                 </div>
                 
@@ -883,11 +1191,12 @@
             <div class="weather-search-section">
                 <div class="search-row">
                     <div class="autocomplete-container">
-                        <input type="text" id="weather-city-search" placeholder="Search for any city..." class="city-search-input" autocomplete="off">
+                        <input type="text" id="weather-city-search" placeholder="Search for any city or enter zipcode..." class="city-search-input" autocomplete="off">
                         <div class="autocomplete-dropdown hidden" id="weather-search-dropdown"></div>
                     </div>
                     <button type="button" id="weather-search-btn" class="primary-btn">Search</button>
                 </div>
+                <p class="search-hint">💡 Enter a city name (e.g., "New York") or zipcode (e.g., "10001")</p>
             </div>
             
             <div class="weather-content">
@@ -975,14 +1284,14 @@
     <div class="assistant-panel" id="assistant-panel">
         <div class="assistant-header">
             <div class="assistant-title">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                 </svg>
-                <span>Planning Assistant</span>
+                <span>Planno Assistant</span>
             </div>
             <button class="assistant-close" id="assistant-close" aria-label="Close Assistant">
-                <svg viewBox="0 0 24 24" width="18" height="18">
+                <svg viewBox="0 0 24 24" width="20" height="20">
                     <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
                     <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
                 </svg>
@@ -991,38 +1300,29 @@
         
         <div class="assistant-chat" id="assistant-chat">
             <div class="assistant-welcome">
-                <div class="welcome-avatar">
-                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="welcome-icon">
+                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
                     </svg>
                 </div>
-                <h3>Hi! I'm your planning assistant</h3>
-                <p>I can help you organize your schedule, break down tasks, and even create them for you! Try asking me:</p>
-                <ul class="welcome-suggestions">
-                    <li>"Help me plan my Monday morning"</li>
-                    <li>"Break down 'Study for exam' into smaller tasks"</li>
-                    <li>"Create a workout schedule for this week"</li>
-                    <li>"Plan my day with 2-hour focus blocks"</li>
-                </ul>
+                <h3>How can I help you today?</h3>
+                <p>Ask me about your schedule, tasks, or nearby places.</p>
+                <div class="quick-suggestions">
+                    <button class="quick-suggestion">"Plan my morning"</button>
+                    <button class="quick-suggestion">"Break down a task"</button>
+                    <button class="quick-suggestion">"Find restaurants nearby"</button>
+                    <button class="quick-suggestion">"Dog-friendly places"</button>
+                </div>
             </div>
         </div>
         
         <div class="assistant-input">
             <div class="input-container">
-                <input type="text" id="assistant-input" placeholder="Ask me anything about planning..." autocomplete="off">
-                <button class="voice-btn" id="voice-btn" title="Voice Input">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                        <line x1="12" y1="19" x2="12" y2="23"></line>
-                        <line x1="8" y1="23" x2="16" y2="23"></line>
-                    </svg>
-                </button>
-                <button class="send-btn" id="assistant-send" title="Send Message">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                <input type="text" id="assistant-input" placeholder="Ask me anything..." autocomplete="off">
+                <button class="send-btn" id="assistant-send" title="Send">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
                     </svg>
                 </button>
             </div>
@@ -1037,7 +1337,7 @@
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Add Class</h3>
+                <h3>📚 Add Class</h3>
                 <button class="modal-close" type="button" aria-label="Close">
                     <svg viewBox="0 0 24 24" width="20" height="20">
                         <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
@@ -1241,7 +1541,7 @@
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Add Break Period</h3>
+                <h3>☕ Add Break Period</h3>
                 <button class="modal-close" type="button" aria-label="Close">
                     <svg viewBox="0 0 24 24" width="20" height="20">
                         <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
@@ -1309,6 +1609,7 @@
         </div>
     </div>
 
+    <script src="static/push-notifications.js"></script>
     <script src="static/script.js"></script>
 </body>
 </html>

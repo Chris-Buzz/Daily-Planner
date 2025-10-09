@@ -41,6 +41,7 @@ firebase-credentials.json
 *.pem
 *.p12
 config/secrets.json
+vapid_keys.json
 
 # IDE
 .vscode/
