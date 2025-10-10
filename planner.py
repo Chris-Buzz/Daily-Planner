@@ -25,6 +25,14 @@ import logging
 from bs4 import BeautifulSoup
 from geopy.distance import geodesic
 from urllib.parse import quote_plus, urljoin
+import warnings
+
+# Suppress warnings for cleaner logs in production
+warnings.filterwarnings('ignore', message='Detected filter using positional arguments')
+warnings.filterwarnings('ignore', module='google.cloud.firestore_v1')
+os.environ['GRPC_VERBOSITY'] = 'ERROR'  # Suppress gRPC verbose logging
+os.environ['GRPC_TRACE'] = ''  # Disable gRPC tracing
+
 # Configure logging for production readiness (Vercel-compatible)
 logging.basicConfig(
     level=logging.INFO,
@@ -528,7 +536,7 @@ def cleanup_sent_notifications():
         if db:
             try:
                 tracking_ref = db.collection('notification_tracking')
-                old_docs = tracking_ref.where('sent_at', '<', cutoff_time).limit(100).stream()
+                old_docs = tracking_ref.where(filter=firestore.FieldFilter('sent_at', '<', cutoff_time)).limit(100).stream()
                 
                 deleted_count = 0
                 for doc in old_docs:
@@ -670,7 +678,7 @@ def check_and_send_notifications():
     try:
         print("🔔 Checking for task notifications based on user's custom reminder times...")
         users_ref = db.collection('users')
-        users = users_ref.where('notifications_enabled', '==', True).stream()
+        users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
         
         current_time = datetime.now()
         notifications_sent = 0
@@ -883,7 +891,7 @@ def send_daily_summary():
         print("📊 Generating daily summaries...")
         users_ref = db.collection('users')
         # Get all users with notifications enabled - we'll check daily_summary individually
-        users = users_ref.where('notifications_enabled', '==', True).stream()
+        users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
         
         today = datetime.now()
         summaries_sent = 0
@@ -1454,7 +1462,7 @@ def send_sporadic_inspiration():
         print("💫 Checking for sporadic inspiration sending...")
         users_ref = db.collection('users')
         # Get users with notifications enabled and auto_inspiration enabled (default to true if not set)
-        users = users_ref.where('notifications_enabled', '==', True).stream()
+        users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
         
         current_time = datetime.now()
         inspirations_sent = 0
