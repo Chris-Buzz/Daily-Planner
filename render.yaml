@@ -1,0 +1,54 @@
+services:
+  # Main web service
+  - type: web
+    name: daily-planner
+    env: python
+    buildCommand: |
+      apt-get update && apt-get install -y libxml2-dev libxslt1-dev python3-dev &&
+      pip install --upgrade pip &&
+      pip install -r requirements.txt
+    startCommand: "gunicorn planner:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+      # Add your environment variables here
+      - key: GEMINI_API_KEY
+        sync: false  # Set in Render dashboard
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: TICKETMASTER_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CLAIM_EMAIL
+        sync: false
+
+  # Cron job for notification checks (every 5 minutes)
+  - type: cron
+    name: check-notifications
+    env: python
+    schedule: "*/5 * * * *"  # Every 5 minutes
+    buildCommand: "echo 'No build needed for cron job'"
+    startCommand: "curl https://daily-planner.onrender.com/api/cron/check-notifications"
+
+  # Cron job for task reminders (every 15 minutes)
+  - type: cron
+    name: check-task-reminders
+    env: python
+    schedule: "*/15 * * * *"  # Every 15 minutes
+    buildCommand: "echo 'No build needed for cron job'"
+    startCommand: "curl https://daily-planner.onrender.com/api/cron/check-task-reminders"
+
+  # Cron job for daily summaries (8 AM daily)
+  - type: cron
+    name: send-daily-summaries
+    env: python
+    schedule: "0 8 * * *"  # 8:00 AM every day
+    buildCommand: "echo 'No build needed for cron job'"
+    startCommand: "curl https://daily-planner.onrender.com/api/cron/send-daily-summaries"

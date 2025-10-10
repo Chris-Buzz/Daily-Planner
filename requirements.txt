@@ -21,7 +21,7 @@ requests==2.31.0
 
 # Web Scraping
 beautifulsoup4==4.12.2
-lxml==4.9.3
+# lxml==4.9.3  # Not needed - using html.parser instead
 
 # JWT Token Handling
 PyJWT==2.8.0
