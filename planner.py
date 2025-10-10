@@ -752,13 +752,20 @@ def check_and_send_notifications():
                     print(f"   ⏰ Task: '{task_data.get('title')}' at {task_time_str} ({time_diff_minutes:.1f} min from now)")
                     
                     # Check if we should send notification for any of the user's reminder times
+                    notification_sent_for_this_task = False
                     for reminder_minutes in user_reminder_times:
-                        # Tolerance: ±2.5 minutes to account for cron job 5-minute intervals
-                        tolerance = 2.5
+                        # Wider tolerance window: Check if we're within the 5-minute cron window BEFORE the reminder time
+                        # This ensures we catch notifications even if cron runs early/late
+                        # Example: For 60-min reminder, send if time_diff is between 57.5-62.5 minutes
+                        tolerance = 5.0  # Increased from 2.5 to 5 minutes for better reliability
                         
-                        if abs(time_diff_minutes - reminder_minutes) <= tolerance:
+                        # Also send if we're past the reminder time but within the window (catch-up logic)
+                        min_boundary = reminder_minutes - tolerance
+                        max_boundary = reminder_minutes + tolerance
+                        
+                        if min_boundary <= time_diff_minutes <= max_boundary:
                             # Found a match! Send notification
-                            print(f"      ✅ MATCH! Time diff {time_diff_minutes:.1f} ≈ reminder {reminder_minutes} min")
+                            print(f"      ✅ MATCH! Time diff {time_diff_minutes:.1f} is within reminder window {min_boundary:.1f}-{max_boundary:.1f} min (target: {reminder_minutes} min)")
                             
                             # Create unique notification key to prevent duplicates
                             # Include reminder time to allow multiple notifications per task
@@ -838,9 +845,16 @@ def check_and_send_notifications():
                             # Mark as sent if successful
                             if notification_sent_successfully:
                                 mark_notification_sent(notification_key)
+                                notification_sent_for_this_task = True
                             
                             # Only send one notification per check (prevent multiple reminders in same run)
                             break
+                    
+                    # Debug: Show why notification wasn't sent if we checked reminders
+                    if not notification_sent_for_this_task and len(user_reminder_times) > 0:
+                        closest_reminder = min(user_reminder_times, key=lambda x: abs(x - time_diff_minutes))
+                        diff_from_closest = abs(time_diff_minutes - closest_reminder)
+                        print(f"      ⏭️ No match. Closest reminder: {closest_reminder} min (diff: {diff_from_closest:.1f} min, need ≤5.0 min)")
                     
                 except ValueError as e:
                     print(f"   ⚠️ Could not parse task time '{task_time_str}': {e}")
@@ -868,18 +882,20 @@ def send_daily_summary():
     try:
         print("📊 Generating daily summaries...")
         users_ref = db.collection('users')
-        # Only send to users who have daily_summary enabled
-        users = users_ref.where('notifications_enabled', '==', True).where('daily_summary', '==', True).stream()
+        # Get all users with notifications enabled - we'll check daily_summary individually
+        users = users_ref.where('notifications_enabled', '==', True).stream()
         
         today = datetime.now()
         summaries_sent = 0
+        users_checked = 0
         
         for user in users:
+            users_checked += 1
             user_data = user.to_dict()
             user_id = user.id
             user_email = user_data.get('email', 'Unknown')
             
-            # Only send if user has daily_summary enabled
+            # Only send if user has daily_summary enabled (check here instead of in query)
             if not user_data.get('daily_summary', False):
                 print(f"⏭️ Skipping daily summary for {user_email} - daily summary disabled")
                 continue
@@ -918,7 +934,8 @@ def send_daily_summary():
                 # Create unique notification key for daily summary
                 notification_key = f"{user_id}_daily_summary_{today_date}"
                 
-                if notification_key in sent_notifications:
+                # Use the proper Firestore-backed check
+                if check_notification_sent(notification_key):
                     print(f"⏭️ Skipping daily summary notification for {user_email} - already sent today")
                     continue
                 
@@ -1020,7 +1037,7 @@ def send_daily_summary():
                     """
                     
                     if send_email(user_data.get('email'), subject, body):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
+                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
                         summaries_sent += 1
                         print(f"✅ Daily summary sent to {user_email}")
                     else:
@@ -1035,7 +1052,7 @@ def send_daily_summary():
                     message += random.choice(INSPIRATIONAL_MESSAGES)[:80]
                     
                     if send_push_notification(user_id, "📊 Daily Summary", message):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
+                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
                         summaries_sent += 1
                         print(f"✅ Push summary sent to user {user_id}")
                     else:
@@ -1044,14 +1061,17 @@ def send_daily_summary():
                 print(f"📋 No completed tasks found for {user_email}")
         
         if summaries_sent > 0:
-            print(f"🎯 Sent {summaries_sent} daily summaries")
+            print(f"🎯 Sent {summaries_sent} daily summaries (checked {users_checked} users)")
         else:
-            print("📊 No daily summaries sent today")
+            print(f"📊 No daily summaries sent (checked {users_checked} users, none had daily_summary enabled or already sent)")
+        
+        return summaries_sent
             
     except Exception as e:
         print(f"❌ Error in send_daily_summary: {e}")
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
+        return 0
 
 def analyze_user_preferences(uid):
     """Analyze user's task history to learn preferences and patterns"""
@@ -1512,7 +1532,8 @@ def send_sporadic_inspiration():
                 # Create unique notification key for sporadic inspiration
                 notification_key = f"{user_id}_inspiration_{today_date}"
                 
-                if notification_key in sent_notifications:
+                # Use the proper Firestore-backed check
+                if check_notification_sent(notification_key):
                     print(f"⏭️ Skipping sporadic inspiration for {user_email} - already sent today")
                     continue
                 
@@ -1541,7 +1562,7 @@ def send_sporadic_inspiration():
                     """
                     
                     if send_email(user_data.get('email'), subject, body):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
+                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
                         inspirations_sent += 1
                         print(f"✅ Sporadic inspiration email sent to {user_email}")
                     else:
@@ -1553,7 +1574,7 @@ def send_sporadic_inspiration():
                         push_message += f" You've got {total_today} tasks today - you've got this! 🏆"
                     
                     if send_push_notification(user_id, "✨ Sporadic Inspiration", push_message):
-                        sent_notifications[notification_key] = datetime.now().isoformat()
+                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
                         inspirations_sent += 1
                         print(f"✅ Sporadic inspiration push sent to user {user_id}")
                     else:
@@ -1563,10 +1584,14 @@ def send_sporadic_inspiration():
             print(f"🎯 Sent {inspirations_sent} sporadic inspiration messages")
         else:
             print("💫 No sporadic inspirations needed right now")
+        
+        return inspirations_sent
             
     except Exception as e:
         print(f"❌ Error in send_sporadic_inspiration: {e}")
         import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return 0
         print(f"Full traceback: {traceback.format_exc()}")
 
 def run_scheduler():
@@ -6206,11 +6231,12 @@ def cron_daily_summary():
             }), 500
         
         # Run the daily summary
-        send_daily_summary()
+        summaries_sent = send_daily_summary()
         
         return jsonify({
             'success': True,
-            'message': 'Daily summary sent',
+            'message': 'Daily summary check completed',
+            'summaries_sent': summaries_sent,
             'timestamp': datetime.now().isoformat()
         }), 200
         
@@ -6253,11 +6279,12 @@ def cron_sporadic_inspiration():
             }), 500
         
         # Run the sporadic inspiration
-        send_sporadic_inspiration()
+        inspirations_sent = send_sporadic_inspiration()
         
         return jsonify({
             'success': True,
-            'message': 'Sporadic inspiration sent',
+            'message': 'Sporadic inspiration check completed',
+            'inspirations_sent': inspirations_sent,
             'timestamp': datetime.now().isoformat()
         }), 200
         
