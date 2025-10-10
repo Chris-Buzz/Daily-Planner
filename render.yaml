@@ -4,10 +4,9 @@ services:
     name: daily-planner
     env: python
     buildCommand: |
-      apt-get update && apt-get install -y libxml2-dev libxslt1-dev python3-dev &&
       pip install --upgrade pip &&
       pip install -r requirements.txt
-    startCommand: "gunicorn planner:app"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT planner:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
