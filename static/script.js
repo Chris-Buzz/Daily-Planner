@@ -913,6 +913,12 @@ const notifications = {
       emailInput.value = state.userSettings.email || '';
     }
 
+    // Update timezone selector
+    const timezoneSelect = document.getElementById('user-timezone');
+    if (timezoneSelect) {
+      timezoneSelect.value = state.userSettings.timezone || 'America/New_York';
+    }
+
     // Phone input removed - SMS notifications disabled
 
     // Handle multiple notification methods
@@ -4926,6 +4932,20 @@ const initEventHandlers = () => {
         statusElement.textContent = isValid ? '✓' : '';
         statusElement.style.color = isValid ? 'var(--success)' : '';
       }
+    });
+  }
+
+  // Timezone selector
+  const timezoneSelect = document.getElementById('user-timezone');
+  if (timezoneSelect) {
+    timezoneSelect.addEventListener('change', (e) => {
+      state.userSettings.timezone = e.target.value;
+      const statusElement = document.getElementById('timezone-status');
+      if (statusElement) {
+        statusElement.textContent = '✓';
+        statusElement.style.color = 'var(--success)';
+      }
+      ui.showNotification('Timezone updated! Your notifications will now be sent based on your local time.', 'success');
     });
   }
 

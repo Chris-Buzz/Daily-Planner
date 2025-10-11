@@ -1,4 +1,5 @@
 from datetime import timedelta, datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template, request, redirect, url_for, make_response, jsonify
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
@@ -494,6 +495,28 @@ def format_time_12hour(time_str):
     except (ValueError, AttributeError):
         return time_str  # Return original if parsing fails
 
+def get_user_current_time(user_timezone=None):
+    """
+    Get current time in user's timezone.
+
+    Args:
+        user_timezone (str): User's timezone (e.g., 'America/New_York', 'America/Los_Angeles')
+                            If None, defaults to UTC
+
+    Returns:
+        datetime: Current time in user's timezone
+    """
+    try:
+        if user_timezone:
+            tz = ZoneInfo(user_timezone)
+            return datetime.now(tz)
+        else:
+            # Default to UTC if no timezone specified
+            return datetime.now(ZoneInfo('UTC'))
+    except Exception as e:
+        print(f"⚠️ Invalid timezone '{user_timezone}', falling back to UTC: {e}")
+        return datetime.now(ZoneInfo('UTC'))
+
 def cleanup_sent_notifications():
     """
     Clean up old notification tracking entries to prevent memory leaks and duplicates.
@@ -679,18 +702,23 @@ def check_and_send_notifications():
         print("🔔 Checking for task notifications based on user's custom reminder times...")
         users_ref = db.collection('users')
         users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
-        
-        current_time = datetime.now()
+
         notifications_sent = 0
-        today = current_time.strftime('%Y-%m-%d')
-        current_day = current_time.strftime('%A').lower()
-        
+
         for user in users:
             user_data = user.to_dict()
             user_id = user.id
             user_email = user_data.get('email', 'Unknown')
-            
-            print(f"🔍 Checking notifications for user: {user_email}")
+
+            # Get user's timezone (default to America/New_York if not set)
+            user_timezone = user_data.get('timezone', 'America/New_York')
+
+            # Get current time in user's timezone
+            current_time = get_user_current_time(user_timezone)
+            today = current_time.strftime('%Y-%m-%d')
+            current_day = current_time.strftime('%A').lower()
+
+            print(f"🔍 Checking notifications for user: {user_email} (timezone: {user_timezone}, local time: {current_time.strftime('%I:%M %p')})")
             
             # Get user's custom reminder times (in minutes before task)
             # Support both custom_reminder_times and reminder_times field names
@@ -765,7 +793,7 @@ def check_and_send_notifications():
                         # Wider tolerance window: Check if we're within the 5-minute cron window BEFORE the reminder time
                         # This ensures we catch notifications even if cron runs early/late
                         # Example: For 60-min reminder, send if time_diff is between 57.5-62.5 minutes
-                        tolerance = 5.0  # Increased from 2.5 to 5 minutes for better reliability
+                        tolerance = 10.0  # Increased from 2.5 to 5 minutes for better reliability
                         
                         # Also send if we're past the reminder time but within the window (catch-up logic)
                         min_boundary = reminder_minutes - tolerance
@@ -892,28 +920,38 @@ def send_daily_summary():
         users_ref = db.collection('users')
         # Get all users with notifications enabled - we'll check daily_summary individually
         users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
-        
-        today = datetime.now()
+        user_list = list(users)
+        print(f"📊 Found {len(user_list)} users with notifications enabled")
+
+        for user in user_list:
+            user_data = user.to_dict()
+            # Add explicit logging
+            print(f"Checking {user_data.get('email')}: daily_summary={user_data.get('daily_summary', False)}")
+
         summaries_sent = 0
         users_checked = 0
-        
+
         for user in users:
             users_checked += 1
             user_data = user.to_dict()
             user_id = user.id
             user_email = user_data.get('email', 'Unknown')
-            
+
             # Only send if user has daily_summary enabled (check here instead of in query)
             if not user_data.get('daily_summary', False):
                 print(f"⏭️ Skipping daily summary for {user_email} - daily summary disabled")
                 continue
-                
-            print(f"📋 Generating summary for user: {user_email}")
-            
+
+            # Get user's timezone (default to America/New_York if not set)
+            user_timezone = user_data.get('timezone', 'America/New_York')
+            today = get_user_current_time(user_timezone)
+
+            print(f"📋 Generating summary for user: {user_email} (timezone: {user_timezone}, local time: {today.strftime('%I:%M %p')})")
+
             # Get ALL tasks from today (for testing)
             tasks_ref = db.collection('users').document(user_id).collection('tasks')
             all_tasks = list(tasks_ref.stream())
-            
+
             current_day = today.strftime('%A').lower()
             today_date = today.strftime('%Y-%m-%d')
             
@@ -1017,7 +1055,8 @@ def send_daily_summary():
                             }.get(task.get('priority', 'medium'), '#4ECDC4')
                             
                             task_time = task.get('startTime') or task.get('time') or task.get('endTime')
-                            time_info = f" at {task_time}" if task_time else ""
+                            formatted_task_time = format_time_12hour(task_time) if task_time else ""
+                            time_info = f" at {formatted_task_time}" if formatted_task_time else ""
                             
                             body += f"""
                             <div style="background: #fff3cd; padding: 12px; margin: 8px 0; border-radius: 6px; border-left: 4px solid {priority_color};">
@@ -2259,6 +2298,7 @@ def notification_settings():
                     'notification_methods': notification_methods,  # Array of selected methods
                     'phone': data.get('phone', ''),
                     'email': data.get('email', ''),
+                    'timezone': data.get('timezone', 'America/New_York'),  # User's timezone
                     'daily_summary': data.get('daily_summary', True),
                     'reminder_time': data.get('reminder_time', 30),  # Legacy single time
                     'reminder_times': reminder_times,  # New flexible times
@@ -2277,6 +2317,7 @@ def notification_settings():
                 'notification_methods': ['email'],  # Default to email only
                 'phone': '',
                 'email': decoded_claims.get('email', ''),
+                'timezone': 'America/New_York',  # Default timezone
                 'daily_summary': True,
                 'reminder_time': 30,  # Legacy single time
                 'reminder_times': [300, 60, 30],  # New flexible times (minutes)
@@ -2297,6 +2338,7 @@ def notification_settings():
                 'notification_method': settings.get('notification_method', 'email'),
                 'notification_methods': settings.get('notification_methods', [settings.get('notification_method', 'email')]),  # Array of methods
                 'phone': settings.get('phone', ''),
+                'timezone': settings.get('timezone', 'America/New_York'),  # User's timezone
                 'daily_summary': settings.get('daily_summary', True),
                 'reminder_time': settings.get('reminder_time', 30),  # Legacy single time
                 'auto_inspiration': settings.get('auto_inspiration', True),

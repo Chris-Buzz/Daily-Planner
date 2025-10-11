@@ -12,6 +12,7 @@ python-dotenv==1.0.0
 # Communications
 twilio==8.10.0
 pywebpush==1.14.0  # Web Push notifications
+py-vapid==1.9.0  # VAPID key generation for push notifications
 
 # Task Scheduling
 schedule==1.2.0
