@@ -3979,6 +3979,54 @@ body.assistant-open .fab-container {
     line-height: 1.4;
 }
 
+/* Timezone Field Specific Styles */
+.timezone-field {
+    position: relative;
+}
+
+.timezone-field select {
+    width: 100%;
+    padding: 12px 16px;
+    padding-right: 40px; /* Space for dropdown arrow */
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    appearance: none; /* Remove default dropdown arrow */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+}
+
+/* Custom dropdown arrow */
+.timezone-field::after {
+    content: '▼';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+
+.timezone-field select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-alpha);
+}
+
+/* Checkmark positioned to the left side */
+.timezone-field .field-status {
+    position: absolute;
+    left: -28px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1rem;
+}
+
 /* Method Grid */
 .method-grid {
     display: grid;

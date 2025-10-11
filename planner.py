@@ -949,6 +949,32 @@ def send_daily_summary():
             user_timezone = user_data.get('timezone', 'America/New_York')
             today = get_user_current_time(user_timezone)
 
+            # Get user's preferred daily summary time (default to 23:30 / 11:30 PM)
+            daily_summary_time = user_data.get('daily_summary_time', '23:30')
+
+            # Parse the user's preferred time
+            try:
+                summary_hour, summary_minute = map(int, daily_summary_time.split(':'))
+                current_hour = today.hour
+                current_minute = today.minute
+
+                # Check if it's within 5 minutes of the user's preferred time
+                # This gives a 10-minute window for the cron job to catch it
+                time_match = (
+                    (current_hour == summary_hour and abs(current_minute - summary_minute) <= 5) or
+                    (current_hour == summary_hour - 1 and current_minute >= 55 and summary_minute <= 5)
+                )
+
+                if not time_match:
+                    print(f"⏭️ Skipping {user_email} - not their summary time yet (current: {today.strftime('%H:%M')}, preferred: {daily_summary_time})")
+                    continue
+
+                print(f"✅ Time match for {user_email}! Current: {today.strftime('%H:%M')}, Preferred: {daily_summary_time}")
+
+            except (ValueError, AttributeError) as e:
+                print(f"⚠️ Invalid daily_summary_time '{daily_summary_time}' for {user_email}, skipping")
+                continue
+
             print(f"📋 Generating summary for user: {user_email} (timezone: {user_timezone}, local time: {today.strftime('%I:%M %p')})")
 
             # Get ALL tasks from today (for testing)
@@ -987,10 +1013,15 @@ def send_daily_summary():
                 if check_notification_sent(notification_key):
                     print(f"⏭️ Skipping daily summary notification for {user_email} - already sent today")
                     continue
-                
-                notification_method = user_data.get('notification_method', 'email')
-                
-                if notification_method == 'email' and user_data.get('email'):
+
+                # Support multiple notification methods
+                notification_methods = user_data.get('notification_methods', [user_data.get('notification_method', 'email')])
+                if not isinstance(notification_methods, list):
+                    notification_methods = [notification_methods]
+
+                summary_sent = False
+
+                if 'email' in notification_methods and user_data.get('email'):
                     # Calculate productivity stats
                     total_count = len([t for t in all_today_tasks if not t.get('completed', False)]) + len(completed_tasks)
                     completion_rate = (len(completed_tasks) / max(total_count, 1)) * 100 if total_count else 100
@@ -1087,13 +1118,12 @@ def send_daily_summary():
                     """
                     
                     if send_email(user_data.get('email'), subject, body):
-                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
-                        summaries_sent += 1
-                        print(f"✅ Daily summary sent to {user_email}")
+                        summary_sent = True
+                        print(f"✅ Daily summary email sent to {user_email}")
                     else:
-                        print(f"❌ Failed to send summary to {user_email}")
-                        
-                elif notification_method == 'push':
+                        print(f"❌ Failed to send summary email to {user_email}")
+
+                if 'push' in notification_methods:
                     # Push notification summary (concise but informative)
                     message = f"Daily Summary: {len(completed_today)} tasks completed, {len(pending_tasks)} pending. "
                     if pending_tasks:
@@ -1102,11 +1132,15 @@ def send_daily_summary():
                     message += random.choice(INSPIRATIONAL_MESSAGES)[:80]
                     
                     if send_push_notification(user_id, "📊 Daily Summary", message):
-                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
-                        summaries_sent += 1
+                        summary_sent = True
                         print(f"✅ Push summary sent to user {user_id}")
                     else:
                         print(f"❌ Failed to send push summary to user {user_id}")
+
+                # Mark as sent if any method succeeded
+                if summary_sent:
+                    mark_notification_sent(notification_key)
+                    summaries_sent += 1
             else:
                 print(f"📋 No completed tasks found for {user_email}")
         
