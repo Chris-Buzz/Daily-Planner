@@ -774,10 +774,13 @@ def check_and_send_notifications():
                     continue  # Skip tasks not scheduled for today
                 
                 try:
-                    # Parse task time
+                    # Parse task time as naive datetime first
                     task_datetime_str = f"{today} {task_time_str}"
-                    task_time = datetime.strptime(task_datetime_str, '%Y-%m-%d %H:%M')
-                    
+                    task_time_naive = datetime.strptime(task_datetime_str, '%Y-%m-%d %H:%M')
+
+                    # Make task_time timezone-aware using the same timezone as current_time
+                    task_time = task_time_naive.replace(tzinfo=current_time.tzinfo)
+
                     # Calculate time difference in minutes
                     time_diff_minutes = (task_time - current_time).total_seconds() / 60
                     
