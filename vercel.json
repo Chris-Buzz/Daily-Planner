@@ -25,7 +25,7 @@
     },
     {
       "path": "/api/cron/sporadic-inspiration",
-      "schedule": "30 9,11,14,16,18 * * *"
+      "schedule": "*/15 * * * *"
     }
   ],
   "env": {

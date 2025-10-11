@@ -1539,31 +1539,40 @@ def send_sporadic_inspiration():
         users_ref = db.collection('users')
         # Get users with notifications enabled and auto_inspiration enabled (default to true if not set)
         users = users_ref.where(filter=firestore.FieldFilter('notifications_enabled', '==', True)).stream()
-        
-        current_time = datetime.now()
+
         inspirations_sent = 0
-        
+
         for user in users:
             user_data = user.to_dict()
             user_id = user.id
             user_email = user_data.get('email', 'Unknown')
-            
+
             # Check if user has auto_inspiration enabled (default to True if not set)
             auto_inspiration = user_data.get('auto_inspiration', True)
             if not auto_inspiration:
                 print(f"⏭️ Skipping inspiration for {user_email} - auto inspiration disabled")
                 continue
-            
+
+            # Get user's timezone and current time in their timezone
+            user_timezone = user_data.get('timezone', 'America/New_York')
+            current_time = get_user_current_time(user_timezone)
+
+            # Check if it's within typical "inspiration hours" (9am-7pm in user's timezone)
+            current_hour = current_time.hour
+            if not (9 <= current_hour < 19):
+                print(f"⏭️ Skipping {user_email} - outside inspiration hours (current: {current_time.strftime('%I:%M %p')})")
+                continue
+
             # Check if user needs inspiration (based on activity and busy schedule)
             should_send = False
-            
+
             # Get user's recent activity - only get today's tasks to improve performance
             tasks_ref = db.collection('users').document(user_id).collection('tasks')
-            
+
             # Get today's tasks more efficiently by filtering on current day and date
             today_tasks = []
             completed_today = 0
-            
+
             current_day = current_time.strftime('%A').lower()
             today_date = current_time.strftime('%Y-%m-%d')
             
@@ -1622,11 +1631,17 @@ def send_sporadic_inspiration():
                     continue
                 
                 print(f"💫 Sending sporadic inspiration to {user_email} (tasks: {total_today}, completed: {completion_rate:.0f}%)")
-                
+
                 message = random.choice(INSPIRATIONAL_MESSAGES)
-                notification_method = user_data.get('notification_method', 'email')
-                
-                if notification_method == 'email' and user_data.get('email'):
+
+                # Support multiple notification methods
+                notification_methods = user_data.get('notification_methods', [user_data.get('notification_method', 'email')])
+                if not isinstance(notification_methods, list):
+                    notification_methods = [notification_methods]
+
+                inspiration_sent = False
+
+                if 'email' in notification_methods and user_data.get('email'):
                     subject = "💫 A Little Motivation For Your Day"
                     body = f"""
                     <div class="header">
@@ -1646,23 +1661,26 @@ def send_sporadic_inspiration():
                     """
                     
                     if send_email(user_data.get('email'), subject, body):
-                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
-                        inspirations_sent += 1
+                        inspiration_sent = True
                         print(f"✅ Sporadic inspiration email sent to {user_email}")
                     else:
                         print(f"❌ Failed to send sporadic inspiration email to {user_email}")
-                        
-                elif notification_method == 'push':
+
+                if 'push' in notification_methods:
                     push_message = f"💫 {message}"
                     if total_today > 3:
                         push_message += f" You've got {total_today} tasks today - you've got this! 🏆"
                     
                     if send_push_notification(user_id, "✨ Sporadic Inspiration", push_message):
-                        mark_notification_sent(notification_key)  # Use Firestore-backed marking
-                        inspirations_sent += 1
+                        inspiration_sent = True
                         print(f"✅ Sporadic inspiration push sent to user {user_id}")
                     else:
-                        print(f"❌ Failed to send sporadic inspiration SMS to {user_data.get('phone')}")
+                        print(f"❌ Failed to send sporadic inspiration push to {user_id}")
+
+                # Mark as sent if any method succeeded
+                if inspiration_sent:
+                    mark_notification_sent(notification_key)
+                    inspirations_sent += 1
         
         if inspirations_sent > 0:
             print(f"🎯 Sent {inspirations_sent} sporadic inspiration messages")
