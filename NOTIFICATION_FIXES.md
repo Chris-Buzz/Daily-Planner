@@ -55,29 +55,39 @@ Added timezone support so that each user's notifications are processed based on 
 
 #### Frontend Changes ([templates/index.html](templates/index.html) & [static/script.js](static/script.js))
 
-1. **Added timezone selector UI** (index.html):
-   ```html
-   <div class="settings-section">
-       <div class="section-header">
-           <h4>🌍 Your Timezone</h4>
-           <p>Set your timezone so notifications arrive at the right time for you</p>
-       </div>
-       <select id="user-timezone" class="timezone-select">
-           <option value="America/New_York">Eastern Time (ET)</option>
-           <option value="America/Chicago">Central Time (CT)</option>
-           <option value="America/Denver">Mountain Time (MT)</option>
-           <option value="America/Los_Angeles">Pacific Time (PT)</option>
-           <!-- ... more timezones ... -->
-       </select>
-   </div>
+1. **Added automatic timezone detection** (script.js):
+   ```javascript
+   // Auto-detect timezone using browser's Intl API
+   const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
    ```
+   - Automatically detects user's timezone on first visit using browser's `Intl.DateTimeFormat()` API
+   - Saves detected timezone to database automatically
+   - Examples: `America/New_York`, `Europe/London`, `Asia/Tokyo`
+   - Falls back to `America/New_York` if detection fails
 
-2. **Added timezone handling in JavaScript** (script.js):
+2. **Added timezone selector UI** (index.html):
+   - Comprehensive dropdown with 30+ popular timezones
+   - Organized by region (US, Canada, Europe, Asia, Australia, Latin America)
+   - Shows auto-detected timezone with checkmark
+   - If detected timezone isn't in dropdown, adds it as a custom option
+   - Users can manually change timezone if auto-detection is incorrect
+
+3. **Added timezone handling in JavaScript** (script.js):
    - Load user's timezone in `notifications.updateUI()`
+   - Auto-detect and save timezone if not already set
+   - Handle custom timezones not in the dropdown
    - Save timezone changes with event listener
    - Display confirmation when timezone is updated
 
 ### How It Works Now
+
+**User Experience:**
+1. **First visit**: Browser automatically detects timezone (e.g., "America/Los_Angeles")
+2. **Timezone saved**: Auto-detected timezone is saved to user's profile
+3. **Verification**: User can verify/change timezone in Settings → Notifications
+4. **No manual setup required**: Works out of the box for 99% of users
+
+**Technical Flow:**
 1. Cron job runs every 5 minutes at UTC time (as before)
 2. For each user, the system:
    - Retrieves their timezone setting (e.g., "America/Los_Angeles")
@@ -86,6 +96,12 @@ Added timezone support so that each user's notifications are processed based on 
 3. Example: If a user in PT has a task at 2:00 PM PT with a 1-hour reminder:
    - The notification will be sent when it's 1:00 PM in PT (regardless of UTC time)
    - Previously, it would have been sent based on UTC time only
+
+**Auto-Detection Benefits:**
+- ✅ Works automatically - no user action required
+- ✅ Accurate - uses browser's native timezone detection
+- ✅ Handles travel - if user travels to a different timezone, they can update it
+- ✅ Handles DST - timezone data includes daylight saving time rules
 
 ---
 

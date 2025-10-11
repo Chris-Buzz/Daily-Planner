@@ -916,7 +916,39 @@ const notifications = {
     // Update timezone selector
     const timezoneSelect = document.getElementById('user-timezone');
     if (timezoneSelect) {
-      timezoneSelect.value = state.userSettings.timezone || 'America/New_York';
+      // Auto-detect timezone if not set
+      if (!state.userSettings.timezone) {
+        const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        console.log(`🌍 Auto-detected timezone: ${detectedTimezone}`);
+        state.userSettings.timezone = detectedTimezone;
+        // Save the auto-detected timezone
+        notifications.saveSettings(false);
+      }
+
+      // Try to set the detected timezone in the dropdown
+      const timezone = state.userSettings.timezone || 'America/New_York';
+
+      // Check if the timezone exists in the dropdown
+      const optionExists = Array.from(timezoneSelect.options).some(option => option.value === timezone);
+
+      if (optionExists) {
+        timezoneSelect.value = timezone;
+      } else {
+        // If detected timezone isn't in dropdown, add it as a custom option
+        console.log(`⚠️ Timezone ${timezone} not in dropdown, adding as custom option`);
+        const customOption = document.createElement('option');
+        customOption.value = timezone;
+        customOption.textContent = `${timezone} (Auto-detected)`;
+        customOption.selected = true;
+        timezoneSelect.insertBefore(customOption, timezoneSelect.firstChild);
+      }
+
+      // Show auto-detection confirmation
+      const timezoneStatus = document.getElementById('timezone-status');
+      if (timezoneStatus && state.userSettings.timezone) {
+        timezoneStatus.textContent = '✓';
+        timezoneStatus.style.color = 'var(--success)';
+      }
     }
 
     // Phone input removed - SMS notifications disabled

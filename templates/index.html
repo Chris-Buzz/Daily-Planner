@@ -511,29 +511,56 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="user-timezone">Timezone</label>
+                            <label for="user-timezone">Timezone (Auto-detected)</label>
                             <div class="input-field">
                                 <span class="input-icon">🕐</span>
                                 <select id="user-timezone" class="timezone-select">
-                                    <option value="America/New_York">Eastern Time (ET)</option>
-                                    <option value="America/Chicago">Central Time (CT)</option>
-                                    <option value="America/Denver">Mountain Time (MT)</option>
-                                    <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                                    <option value="America/Anchorage">Alaska Time (AKT)</option>
-                                    <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
-                                    <option value="America/Phoenix">Arizona Time (MST)</option>
-                                    <option value="Europe/London">London (GMT/BST)</option>
-                                    <option value="Europe/Paris">Paris (CET/CEST)</option>
-                                    <option value="Europe/Berlin">Berlin (CET/CEST)</option>
-                                    <option value="Asia/Dubai">Dubai (GST)</option>
-                                    <option value="Asia/Kolkata">India (IST)</option>
-                                    <option value="Asia/Shanghai">Shanghai (CST)</option>
-                                    <option value="Asia/Tokyo">Tokyo (JST)</option>
-                                    <option value="Australia/Sydney">Sydney (AEDT/AEST)</option>
+                                    <optgroup label="🇺🇸 United States">
+                                        <option value="America/New_York">Eastern Time (ET)</option>
+                                        <option value="America/Chicago">Central Time (CT)</option>
+                                        <option value="America/Denver">Mountain Time (MT)</option>
+                                        <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                                        <option value="America/Anchorage">Alaska Time (AKT)</option>
+                                        <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
+                                        <option value="America/Phoenix">Arizona Time (MST - No DST)</option>
+                                    </optgroup>
+                                    <optgroup label="🇨🇦 Canada">
+                                        <option value="America/Toronto">Toronto (ET)</option>
+                                        <option value="America/Vancouver">Vancouver (PT)</option>
+                                        <option value="America/Halifax">Halifax (AT)</option>
+                                    </optgroup>
+                                    <optgroup label="🇬🇧 Europe">
+                                        <option value="Europe/London">London (GMT/BST)</option>
+                                        <option value="Europe/Paris">Paris (CET/CEST)</option>
+                                        <option value="Europe/Berlin">Berlin (CET/CEST)</option>
+                                        <option value="Europe/Rome">Rome (CET/CEST)</option>
+                                        <option value="Europe/Madrid">Madrid (CET/CEST)</option>
+                                        <option value="Europe/Amsterdam">Amsterdam (CET/CEST)</option>
+                                    </optgroup>
+                                    <optgroup label="🌏 Asia">
+                                        <option value="Asia/Dubai">Dubai (GST)</option>
+                                        <option value="Asia/Kolkata">India (IST)</option>
+                                        <option value="Asia/Shanghai">Shanghai (CST)</option>
+                                        <option value="Asia/Hong_Kong">Hong Kong (HKT)</option>
+                                        <option value="Asia/Tokyo">Tokyo (JST)</option>
+                                        <option value="Asia/Seoul">Seoul (KST)</option>
+                                        <option value="Asia/Singapore">Singapore (SGT)</option>
+                                    </optgroup>
+                                    <optgroup label="🌏 Australia & Pacific">
+                                        <option value="Australia/Sydney">Sydney (AEDT/AEST)</option>
+                                        <option value="Australia/Melbourne">Melbourne (AEDT/AEST)</option>
+                                        <option value="Australia/Perth">Perth (AWST)</option>
+                                        <option value="Pacific/Auckland">Auckland (NZDT/NZST)</option>
+                                    </optgroup>
+                                    <optgroup label="🌎 Latin America">
+                                        <option value="America/Mexico_City">Mexico City (CST)</option>
+                                        <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                                        <option value="America/Buenos_Aires">Buenos Aires (ART)</option>
+                                    </optgroup>
                                 </select>
                                 <span class="field-status" id="timezone-status"></span>
                             </div>
-                            <p class="field-hint">Notifications will be sent based on your local time</p>
+                            <p class="field-hint">🌍 Auto-detected from your browser. Notifications will be sent based on your local time.</p>
                         </div>
                     </div>
 
