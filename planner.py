@@ -1609,78 +1609,127 @@ def send_sporadic_inspiration():
             
             print(f"📊 User {user_email}: Found {len(today_tasks)} tasks for today ({completed_today} completed)")
             
-            # Send inspiration if:
-            # 1. Busy day (5+ tasks today) or
-            # 2. Low completion rate (< 50% of today's tasks completed) or  
-            # 3. Random chance (10% to keep it sporadic)
             total_today = len(today_tasks)
             completion_rate = (completed_today / max(total_today, 1)) * 100 if total_today else 100
-            
-            if (total_today >= 5 or 
-                (total_today > 0 and completion_rate < 50) or 
-                random.random() < 0.1):
-                should_send = True
-            
-            if should_send:
-                # Create unique notification key for sporadic inspiration
-                notification_key = f"{user_id}_inspiration_{today_date}"
-                
-                # Use the proper Firestore-backed check
-                if check_notification_sent(notification_key):
-                    print(f"⏭️ Skipping sporadic inspiration for {user_email} - already sent today")
-                    continue
-                
-                print(f"💫 Sending sporadic inspiration to {user_email} (tasks: {total_today}, completed: {completion_rate:.0f}%)")
 
-                message = random.choice(INSPIRATIONAL_MESSAGES)
+            # Get today's inspiration history from Firestore
+            inspiration_history_ref = db.collection('users').document(user_id).collection('inspiration_history')
+            today_inspirations_query = inspiration_history_ref.where(
+                filter=firestore.FieldFilter('date', '==', today_date)
+            ).order_by('sent_at').stream()
 
-                # Support multiple notification methods
-                notification_methods = user_data.get('notification_methods', [user_data.get('notification_method', 'email')])
-                if not isinstance(notification_methods, list):
-                    notification_methods = [notification_methods]
+            today_inspirations = list(today_inspirations_query)
+            inspirations_sent_count = len(today_inspirations)
 
-                inspiration_sent = False
+            # Check if we've already sent 4 inspirations today
+            if inspirations_sent_count >= 4:
+                print(f"⏭️ Skipping {user_email} - already sent 4 inspirations today")
+                continue
 
-                if 'email' in notification_methods and user_data.get('email'):
-                    subject = "💫 A Little Motivation For Your Day"
-                    body = f"""
-                    <div class="header">
-                        <h2>✨ Sporadic Inspiration Alert! ✨</h2>
+            # Check if enough time has passed since last inspiration (2 hours = 120 minutes)
+            if today_inspirations:
+                last_inspiration = today_inspirations[-1].to_dict()
+                last_sent_at = last_inspiration.get('sent_at')
+
+                if last_sent_at:
+                    # Make timezone-aware for comparison
+                    if isinstance(last_sent_at, datetime):
+                        # If it's naive, make it aware with user's timezone
+                        if last_sent_at.tzinfo is None:
+                            last_sent_at = last_sent_at.replace(tzinfo=current_time.tzinfo)
+
+                    time_since_last = (current_time - last_sent_at).total_seconds() / 60  # minutes
+
+                    if time_since_last < 120:  # Less than 2 hours
+                        print(f"⏭️ Skipping {user_email} - last inspiration was {time_since_last:.0f} minutes ago (need 120 min)")
+                        continue
+
+            # Calculate probability based on how many we've sent and time of day
+            # Higher probability as we get closer to end of inspiration hours
+            hours_remaining = 19 - current_hour  # inspiration hours end at 7pm
+            inspirations_remaining = 4 - inspirations_sent_count
+
+            if hours_remaining > 0:
+                # Calculate base probability to ensure we send all 4 by end of day
+                base_probability = min(0.5, inspirations_remaining / (hours_remaining * 4))  # 4 checks per hour (every 15 min)
+            else:
+                base_probability = 1.0  # High probability near end of day
+
+            # Boost probability if user is busy or struggling
+            if total_today >= 5:
+                base_probability *= 1.5  # Busy day
+            if total_today > 0 and completion_rate < 50:
+                base_probability *= 1.3  # Low completion rate
+
+            base_probability = min(1.0, base_probability)  # Cap at 100%
+
+            # Decide whether to send based on probability
+            if random.random() > base_probability:
+                print(f"⏭️ Skipping {user_email} - probability check failed ({base_probability:.2%} chance, {inspirations_sent_count}/4 sent)")
+                continue
+
+            print(f"💫 Sending sporadic inspiration #{inspirations_sent_count + 1}/4 to {user_email} (tasks: {total_today}, completed: {completion_rate:.0f}%)")
+
+            message = random.choice(INSPIRATIONAL_MESSAGES)
+
+            # Support multiple notification methods
+            notification_methods = user_data.get('notification_methods', [user_data.get('notification_method', 'email')])
+            if not isinstance(notification_methods, list):
+                notification_methods = [notification_methods]
+
+            inspiration_sent = False
+
+            if 'email' in notification_methods and user_data.get('email'):
+                subject = "💫 A Little Motivation For Your Day"
+                body = f"""
+                <div class="header">
+                    <h2>✨ Sporadic Inspiration Alert! ✨</h2>
+                </div>
+                <div class="content">
+                    <div class="inspiration">
+                        <h2 style="color: #1abc9c; font-size: 28px; margin: 20px 0;">{message}</h2>
+                        <p style="margin-top: 30px; font-size: 18px;">
+                            {f"You've got {total_today} tasks today - you're handling it like a champion! 🏆" if total_today > 3 else "Keep up the amazing work! 🌟"}
+                        </p>
+                        <p style="margin-top: 15px; font-size: 14px; opacity: 0.8;">
+                            This is inspiration #{inspirations_sent_count + 1} of 4 for today.
+                        </p>
                     </div>
-                    <div class="content">
-                        <div class="inspiration">
-                            <h2 style="color: #1abc9c; font-size: 28px; margin: 20px 0;">{message}</h2>
-                            <p style="margin-top: 30px; font-size: 18px;">
-                                {f"You've got {total_today} tasks today - you're handling it like a champion! 🏆" if total_today > 3 else "Keep up the amazing work! 🌟"}
-                            </p>
-                            <p style="margin-top: 15px; font-size: 14px; opacity: 0.8;">
-                                This message was sent automatically because you've enabled sporadic inspiration in your settings.
-                            </p>
-                        </div>
-                    </div>
-                    """
-                    
-                    if send_email(user_data.get('email'), subject, body):
-                        inspiration_sent = True
-                        print(f"✅ Sporadic inspiration email sent to {user_email}")
-                    else:
-                        print(f"❌ Failed to send sporadic inspiration email to {user_email}")
+                </div>
+                """
 
-                if 'push' in notification_methods:
-                    push_message = f"💫 {message}"
-                    if total_today > 3:
-                        push_message += f" You've got {total_today} tasks today - you've got this! 🏆"
-                    
-                    if send_push_notification(user_id, "✨ Sporadic Inspiration", push_message):
-                        inspiration_sent = True
-                        print(f"✅ Sporadic inspiration push sent to user {user_id}")
-                    else:
-                        print(f"❌ Failed to send sporadic inspiration push to {user_id}")
+                if send_email(user_data.get('email'), subject, body):
+                    inspiration_sent = True
+                    print(f"✅ Sporadic inspiration email sent to {user_email}")
+                else:
+                    print(f"❌ Failed to send sporadic inspiration email to {user_email}")
 
-                # Mark as sent if any method succeeded
-                if inspiration_sent:
-                    mark_notification_sent(notification_key)
-                    inspirations_sent += 1
+            if 'push' in notification_methods:
+                push_message = f"💫 {message}"
+                if total_today > 3:
+                    push_message += f" You've got {total_today} tasks today - you've got this! 🏆"
+
+                if send_push_notification(user_id, "✨ Sporadic Inspiration", push_message):
+                    inspiration_sent = True
+                    print(f"✅ Sporadic inspiration push sent to user {user_id}")
+                else:
+                    print(f"❌ Failed to send sporadic inspiration push to {user_id}")
+
+            # Record in inspiration history if any method succeeded
+            if inspiration_sent:
+                try:
+                    inspiration_history_ref.add({
+                        'date': today_date,
+                        'sent_at': current_time,
+                        'message': message,
+                        'count': inspirations_sent_count + 1,
+                        'methods': notification_methods
+                    })
+                    print(f"   📝 Recorded inspiration #{inspirations_sent_count + 1}/4 in history")
+                except Exception as e:
+                    print(f"   ⚠️ Failed to record inspiration history: {e}")
+
+                inspirations_sent += 1
         
         if inspirations_sent > 0:
             print(f"🎯 Sent {inspirations_sent} sporadic inspiration messages")
