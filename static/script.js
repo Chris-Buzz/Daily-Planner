@@ -3831,17 +3831,9 @@ const assistant = {
           },
           async (error) => {
             console.warn('⚠️ Location access denied:', error.message);
-            console.log('🌤️ Weather will be limited without location access');
-            
-            // Try to use a default location for demo purposes
-            console.log('🌤️ Attempting to use default location for weather...');
-            try {
-              const weatherData = await weather.getWeatherByCoordinates(40.7128, -74.0060); // NYC as fallback
-              weather.lastWeatherData = weatherData;
-              console.log('🌤️ Successfully fetched default location weather data');
-            } catch (error) {
-              console.error('❌ Default weather fetch failed:', error);
-            }
+            console.log('🌤️ Weather will not be available without location permission');
+            console.log('💡 To get weather data, please enable location access in your browser settings');
+            // No fallback - user must provide location permission or set location in preferences
           },
           { 
             timeout: 15000, 
@@ -3851,11 +3843,8 @@ const assistant = {
         );
       } else {
         console.warn('⚠️ Geolocation not available in this browser');
-        // Use default location
-        console.log('🌤️ Using default location for weather...');
-        const weatherData = await weather.getWeatherByCoordinates(40.7128, -74.0060); // NYC as fallback
-        weather.lastWeatherData = weatherData;
-        console.log('🌤️ Successfully fetched default location weather data');
+        console.log('🌤️ Weather features will not be available');
+        console.log('💡 Please use a browser that supports geolocation for weather features');
       }
     } catch (error) {
       console.error('❌ Auto weather fetch error:', error);
@@ -4882,11 +4871,13 @@ const initEventHandlers = () => {
     });
   }
 
-  // Welcome suggestions
-  const welcomeSuggestions = document.querySelectorAll('.welcome-suggestions li');
+  // Welcome suggestions and quick suggestions
+  const welcomeSuggestions = document.querySelectorAll('.welcome-suggestions li, .quick-suggestion');
   welcomeSuggestions.forEach(suggestion => {
     suggestion.addEventListener('click', () => {
-      elements.assistantInput.value = suggestion.textContent;
+      // Remove quotes from suggestion text if present
+      const text = suggestion.textContent.replace(/^["']|["']$/g, '');
+      elements.assistantInput.value = text;
       assistant.sendMessage();
     });
   });

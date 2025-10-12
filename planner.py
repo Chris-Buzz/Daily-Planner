@@ -3689,10 +3689,10 @@ NATURAL CONVERSATION:
     
     return recommendations_text
 
-def get_assistant_recommendations(user_preferences, user_message_lower):
-    """Get live recommendations for assistant based on user message"""
+def get_assistant_recommendations(user_preferences, user_message_lower, current_hour=None, weather_info=None):
+    """Get live recommendations for assistant based on user message with time & weather context"""
     try:
-        print(f"🔍 DEBUG: Checking user message: '{user_message_lower}'")
+        print(f"🔍 DEBUG: Checking user message: '{user_message_lower}' (hour={current_hour}, weather={weather_info.get('condition') if weather_info else None})")
         
         # Check if user is asking about places/recommendations
         place_keywords = ['restaurant', 'eat', 'food', 'dining', 'place', 'where', 'go', 'do', 'park', 'cafe', 'coffee', 'shop', 'activity', 'fun', 'entertainment', 'dog-friendly', 'dog friendly', 'pet-friendly', 'basketball', 'sport', 'gym', 'workout', 'museum', 'art', 'theater', 'bar', 'drink', 'nightlife', 'music', 'event', 'concert', 'show', 'festival', 'near', 'nearby', 'around', 'local', 'golf', 'court', 'field']
@@ -3705,11 +3705,16 @@ def get_assistant_recommendations(user_preferences, user_message_lower):
             return None
             
         print(f"🔍 User asking about places, fetching live recommendations...")
-        
-        # Get user location from preferences
-        location = user_preferences.get('location', 'Monmouth County, NJ')
-        radius = user_preferences.get('maxTravelDistance', 10)
+
+        # Get user location from preferences - NO hardcoded fallback
+        location = user_preferences.get('location', '').strip() if user_preferences else ''
+        radius = user_preferences.get('maxTravelDistance', 10) if user_preferences else 10
         print(f"🔍 DEBUG: location={location}, radius={radius}")
+
+        # If no location set, return None to let AI handle it
+        if not location:
+            print(f"⚠️ No location set in preferences")
+            return None
         
         # Check for specific queries and use Google Places API directly
         specific_query = None
@@ -3771,12 +3776,14 @@ def get_assistant_recommendations(user_preferences, user_message_lower):
                 'events': []
             }
         
-        # Otherwise, fetch general recommendations
+        # Otherwise, fetch general recommendations with time & weather context
         all_recommendations = get_all_recommendations(
             location=location,
             radius_miles=radius,
             max_results=20,
-            user_preferences=user_preferences
+            user_preferences=user_preferences,
+            current_hour=current_hour,
+            weather_info=weather_info
         )
         
         places = all_recommendations.get('places', [])
@@ -3925,8 +3932,13 @@ Weather Status: No weather data currently available
                 sender = "User" if msg['sender'] == 'user' else "Assistant"
                 conversation_context += f"- {sender}: {msg['message'][:100]}{'...' if len(msg['message']) > 100 else ''}\n"
         
-        # Get live recommendations for the assistant
-        live_recommendations = get_assistant_recommendations(user_preferences, user_message.lower())
+        # Get live recommendations for the assistant with time & weather context
+        live_recommendations = get_assistant_recommendations(
+            user_preferences,
+            user_message.lower(),
+            current_hour=current_hour,
+            weather_info=weather_info
+        )
         recommendations_text = ""
         
         if live_recommendations:
@@ -3939,13 +3951,23 @@ Weather Status: No weather data currently available
                 if places:
                     recommendations_text += f"📍 NEARBY PLACES ({len(places)} recommendations):\n"
                     for i, place in enumerate(places, 1):
-                        recommendations_text += f"{i}. {place.get('icon', '📍')} {place.get('title', 'Unknown Place')}\n"
+                        place_name = place.get('title', 'Unknown Place')
+                        recommendations_text += f"{i}. {place.get('icon', '📍')} {place_name}\n"
                         if place.get('rating'):
                             recommendations_text += f"   - Rating: {place.get('rating')} stars\n"
                         if place.get('price_level'):
                             recommendations_text += f"   - Price: {place.get('price_level')}\n"
                         if place.get('venue'):
-                            recommendations_text += f"   - Address: {place.get('venue')}\n"
+                            venue = place.get('venue')
+                            recommendations_text += f"   - Address: {venue}\n"
+                            # Generate Google Maps link
+                            import urllib.parse
+                            maps_query = urllib.parse.quote(f"{place_name}, {venue}")
+                            maps_link = f"https://www.google.com/maps/search/?api=1&query={maps_query}"
+                            recommendations_text += f"   - 🗺️ Google Maps: {maps_link}\n"
+                            # Generate directions link
+                            directions_link = f"https://www.google.com/maps/dir/?api=1&destination={maps_query}"
+                            recommendations_text += f"   - 🧭 Directions: {directions_link}\n"
                         if place.get('distance'):
                             recommendations_text += f"   - Distance: {place.get('distance')} miles away\n"
                         if place.get('dog_friendly'):
@@ -3956,13 +3978,23 @@ Weather Status: No weather data currently available
                 if events:
                     recommendations_text += f"🎉 NEARBY EVENTS ({len(events)} recommendations):\n"
                     for i, event in enumerate(events, 1):
-                        recommendations_text += f"{i}. {event.get('icon', '🎉')} {event.get('title', 'Unknown Event')}\n"
+                        event_name = event.get('title', 'Unknown Event')
+                        recommendations_text += f"{i}. {event.get('icon', '🎉')} {event_name}\n"
                         recommendations_text += f"   - Date: {event.get('date', 'N/A')}\n"
                         if event.get('time') and event.get('time') not in ['N/A', 'See website', 'Check website']:
                             recommendations_text += f"   - Time: {event.get('time')}\n"
-                        recommendations_text += f"   - Venue: {event.get('venue', 'N/A')}\n"
+                        venue = event.get('venue', 'N/A')
+                        recommendations_text += f"   - Venue: {venue}\n"
                         if event.get('distance') and event.get('distance') not in ['N/A', 'Online']:
                             recommendations_text += f"   - Distance: {event.get('distance')} miles away\n"
+                        # Add Google Maps links for events with venues
+                        if venue and venue not in ['N/A', 'Online', 'Virtual']:
+                            import urllib.parse
+                            maps_query = urllib.parse.quote(f"{event_name}, {venue}")
+                            maps_link = f"https://www.google.com/maps/search/?api=1&query={maps_query}"
+                            recommendations_text += f"   - 🗺️ Google Maps: {maps_link}\n"
+                            directions_link = f"https://www.google.com/maps/dir/?api=1&destination={maps_query}"
+                            recommendations_text += f"   - 🧭 Directions: {directions_link}\n"
                         recommendations_text += "\n"
                 
                 recommendations_text += """
@@ -3970,11 +4002,12 @@ IMPORTANT: When user asks about restaurants, places to go, things to do, etc.:
 1. USE THE LIVE RECOMMENDATIONS ABOVE to suggest SPECIFIC places with REAL details
 2. Instead of saying "search on Google Maps or Yelp", recommend actual places from the list
 3. Mention specific details like ratings, distance, and special features (dog-friendly, etc.)
-4. Offer to add recommended places to their schedule as tasks
-5. Examples:
-   - "I found The Ocean House restaurant just 2.3 miles away with 4.5 stars - perfect for dinner! Should I add it to your schedule?"
-   - "There's a dog-friendly park called Huber Woods only 1.8 miles from you - great for your pup! Want me to schedule a visit?"
-   - "Blue Note Jazz Club has live music tonight at 8 PM, only 3 miles away. Interested?"
+4. ALWAYS provide the Google Maps link and Directions link for each place you recommend
+5. Offer to add recommended places to their schedule as tasks
+6. Examples:
+   - "I found The Ocean House restaurant just 2.3 miles away with 4.5 stars - perfect for dinner! Here's the Google Maps link: [link] and directions: [directions link]. Should I add it to your schedule?"
+   - "There's a dog-friendly park called Huber Woods only 1.8 miles from you - great for your pup! Google Maps: [link], Directions: [directions]. Want me to schedule a visit?"
+   - "Blue Note Jazz Club has live music tonight at 8 PM, only 3 miles away. Check it out: [maps link]. Interested?"
 
 """
             else:
@@ -3989,14 +4022,29 @@ When user asks about places/restaurants:
 
 """
         else:
-            recommendations_text = f"""
+            # Check if user has location set
+            user_location = user_preferences.get('location', '').strip() if user_preferences else ''
+            if user_location:
+                recommendations_text = f"""
 
 NO CURRENT RECOMMENDATIONS AVAILABLE
 
 When user asks about places/restaurants:
-- Acknowledge you can't search for specific places right now  
-- Suggest they check Google Maps or Yelp for "{user_preferences.get('location', 'your area')}"
+- Acknowledge you can't search for specific places right now
+- Suggest they check Google Maps or Yelp for "{user_location}"
 - Offer to help plan once they find a place
+
+"""
+            else:
+                recommendations_text = f"""
+
+NO LOCATION SET - CANNOT PROVIDE RECOMMENDATIONS
+
+When user asks about places/restaurants/nearby activities:
+- Politely inform them they need to set their location first
+- Explain: "Please set your location in AI Preferences (⚙️ Settings → AI Preferences) so I can recommend nearby places!"
+- Once they set their location, you'll be able to provide personalized recommendations
+- Offer to help with other planning tasks in the meantime
 
 """
         
@@ -6031,20 +6079,23 @@ def get_ticketmaster_events(location, radius_miles=10, max_results=10):
     return events
 
 
-def get_all_recommendations(location, radius_miles=10, max_results=20, user_preferences=None):
+def get_all_recommendations(location, radius_miles=10, max_results=20, user_preferences=None, current_hour=None, weather_info=None):
     """
     Aggregate recommendations from all sources with smart personalization.
     - Google Places (restaurants, parks, stores, etc.) - PERSONALIZED by interests
     - Ticketmaster (concerts, sports, theater) - Major events
-    
+
     Focus on variety: restaurants, cafes, parks, entertainment venues, sports facilities
-    
+    NOW WITH TIME & WEATHER AWARENESS for smarter recommendations!
+
     Args:
         location: Location string
         radius_miles: Search radius in miles (1-20 recommended)
         max_results: Maximum total results (will return up to 10 places and 10 events)
         user_preferences: User preference dict for personalization
-        
+        current_hour: Current hour (0-23) for time-based recommendations
+        weather_info: Weather dict with condition, temperature, etc. for weather-aware suggestions
+
     Returns:
         dict: Combined recommendations with separate categories
     """
@@ -6065,24 +6116,77 @@ def get_all_recommendations(location, radius_miles=10, max_results=20, user_pref
         tm_events = get_ticketmaster_events(location, radius_miles, max_results=20)
         print(f"✅ Found {len(tm_events)} Ticketmaster events")
         
-        # Combine places and events into one pool
+        # Apply time & weather-based filtering and prioritization
+        # Combine places and events into one pool with scoring
         all_items = []
         for place in places:
             place['type'] = 'place'
+            place['context_score'] = 0  # Score based on time/weather relevance
+
+            # Time-based scoring (if current_hour provided)
+            if current_hour is not None:
+                place_title_lower = place.get('title', '').lower()
+                # Morning (5-11): Cafes, breakfast spots, gyms
+                if 5 <= current_hour < 11:
+                    if any(word in place_title_lower for word in ['cafe', 'coffee', 'breakfast', 'bakery', 'gym', 'fitness']):
+                        place['context_score'] += 10
+                # Lunch (11-14): Restaurants, cafes
+                elif 11 <= current_hour < 14:
+                    if any(word in place_title_lower for word in ['restaurant', 'cafe', 'lunch', 'deli', 'bistro']):
+                        place['context_score'] += 10
+                # Afternoon (14-17): Parks, activities, shopping
+                elif 14 <= current_hour < 17:
+                    if any(word in place_title_lower for word in ['park', 'museum', 'shop', 'mall', 'gallery']):
+                        place['context_score'] += 10
+                # Evening/Dinner (17-22): Restaurants, bars, entertainment
+                elif 17 <= current_hour < 22:
+                    if any(word in place_title_lower for word in ['restaurant', 'bar', 'theater', 'cinema', 'nightclub']):
+                        place['context_score'] += 10
+                # Late night (22-5): Bars, late-night food
+                else:
+                    if any(word in place_title_lower for word in ['bar', 'club', 'diner', '24']):
+                        place['context_score'] += 10
+
+            # Weather-based scoring (if weather_info provided)
+            if weather_info:
+                place_title_lower = place.get('title', '').lower()
+                condition = weather_info.get('condition', '').lower() if weather_info.get('condition') else ''
+                temp = weather_info.get('temperature', 70)
+
+                # Rainy/snowy weather: indoor activities
+                if any(word in condition for word in ['rain', 'snow', 'storm']):
+                    if any(word in place_title_lower for word in ['museum', 'mall', 'theater', 'cinema', 'indoor', 'cafe', 'restaurant']):
+                        place['context_score'] += 8
+                # Sunny/clear weather: outdoor activities
+                elif any(word in condition for word in ['sun', 'clear', 'fair']):
+                    if any(word in place_title_lower for word in ['park', 'beach', 'outdoor', 'garden', 'trail']):
+                        place['context_score'] += 8
+
+                # Temperature-based
+                if temp < 40:  # Cold: indoor, warm food
+                    if any(word in place_title_lower for word in ['cafe', 'restaurant', 'museum', 'indoor']):
+                        place['context_score'] += 5
+                elif temp > 75:  # Hot: parks with shade, water activities, ice cream
+                    if any(word in place_title_lower for word in ['ice cream', 'frozen', 'pool', 'water', 'shade']):
+                        place['context_score'] += 5
+
             all_items.append(place)
+
         for event in tm_events:
             event['type'] = 'event'
+            event['context_score'] = 5  # Events get slight boost as they're time-sensitive
             all_items.append(event)
-        
-        # Shuffle for variety on each refresh, but use a time-based seed
-        # so results stay consistent for ~5 minutes (then rotate)
+
+        # Sort by context score (descending), then shuffle within score groups
         import random
         import time
         seed = int(time.time() / 300)  # Changes every 5 minutes
         random.seed(seed)
-        random.shuffle(all_items)
-        
-        # Take only 10 items total
+
+        # Sort by score first
+        all_items.sort(key=lambda x: x.get('context_score', 0), reverse=True)
+
+        # Take top items (prioritized by context)
         selected_items = all_items[:10]
         
         # Separate back into places and events
@@ -6118,22 +6222,33 @@ def get_recommendations():
         # Get user preferences
         user_ref = db.collection('users').document(uid)
         prefs_doc = user_ref.collection('preferences').document('main').get()
-        
-        # Default values - ALWAYS use Monmouth County as fallback
-        location = 'Monmouth County, NJ'  # Default location
+
+        # Default values - no hardcoded location
+        location = None
         radius = 10  # Default 10 miles (1-20 mile range)
         user_preferences = None
         auto_filled = False
-        
+
         if prefs_doc.exists:
             user_preferences = prefs_doc.to_dict()
-            # Only override default if user explicitly set a location
+            # Get user's location from preferences
             user_location = user_preferences.get('location', '').strip()
             if user_location:
                 location = user_location
             # Get radius from preferences, clamp to 1-20 mile range
             radius = user_preferences.get('maxTravelDistance', 10)
             radius = max(1, min(20, radius))  # Ensure 1-20 range
+
+        # If no location set, return error asking user to set location
+        if not location:
+            return jsonify({
+                'success': False,
+                'error': 'no_location',
+                'message': 'Please set your location in AI Preferences to get personalized recommendations.',
+                'recommendations': [],
+                'places': [],
+                'events': []
+            }), 200
         
         # AUTO-FILL PREFERENCES if user has no preferences set
         if not user_preferences or not any([
