@@ -1,0 +1,66 @@
+# Railway Ignore File
+# Similar to .gitignore, but specifically for Railway deployments
+
+# Development files
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment and secrets
+.env
+.env.local
+*.env
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation (optional - include if you want docs)
+*.md
+!README.md
+!RAILWAY_DEPLOYMENT.md
+
+# Logs
+*.log
+logs/
+
+# Vercel-specific (not needed on Railway)
+vercel.json
+.vercel/
+
+# Git
+.git/
+.gitignore
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Database files (if any local DBs)
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/

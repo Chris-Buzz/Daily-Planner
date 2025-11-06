@@ -422,15 +422,36 @@ COPY requirements.txt .
 
 ### Platform Deployment
 
-### Creating Tasks- **Heroku**: Ready for deployment with Procfile
+- **Railway** ⭐ RECOMMENDED: Full-featured deployment with persistent processes
+  - See [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md) for detailed guide
+  - Supports background scheduler for notifications
+  - Built-in metrics and monitoring
+  - Auto-deploy from GitHub
+  
+- **Vercel**: Serverless deployment (notifications via cron jobs)
+  - Fast global edge network
+  - Automatic HTTPS
+  - Limited to serverless functions
 
-1. Click **"Add Task"** button (or FAB on mobile)- **Google Cloud Platform**: Compatible with App Engine
+- **Heroku**: Ready for deployment with Procfile
+- **Google Cloud Platform**: Compatible with App Engine
+- **AWS**: Deploy with Elastic Beanstalk or EC2
+- **Digital Ocean**: App Platform ready
 
-2. Fill in task details (title, description, times)- **AWS**: Deploy with Elastic Beanstalk or EC2
+### Quick Deploy to Railway
 
-3. Select one or more days using checkboxes- **Digital Ocean**: App Platform ready
+1. Fork this repository
+2. Sign up at [Railway.app](https://railway.app)
+3. Click "New Project" → "Deploy from GitHub"
+4. Select your forked repository
+5. Add environment variables (see RAILWAY_DEPLOYMENT.md)
+6. Deploy! 🚀
 
-4. Click **"All Days"** to apply to entire week
+Railway is recommended for production use as it supports:
+- ✅ Persistent background processes (scheduler)
+- ✅ Real-time notifications without external cron
+- ✅ Better resource management
+- ✅ Built-in monitoring and logging
 
 5. Choose priority and color## 🛠️ Development
 

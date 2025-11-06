@@ -1,6 +1,6 @@
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template, request, redirect, url_for, make_response, jsonify
+from flask import Flask, render_template, request, redirect, url_for, make_response, jsonify, Response
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from flask_cors import CORS
@@ -48,6 +48,88 @@ logger = logging.getLogger(__name__)
 def require_user_auth(f): 
     """Decorator for user authentication (simplified version)"""
     return f
+
+# ===== CACHING SYSTEM FOR API OPTIMIZATION =====
+# In-memory cache for Places API results (prevents expensive repeated calls)
+places_cache = {}
+CACHE_DURATION = timedelta(hours=6)  # Cache results for 6 hours
+
+def get_cached_places(cache_key):
+    """Get cached places if available and not expired (checks Firebase first, then memory)"""
+    # Check memory cache first (fastest)
+    if cache_key in places_cache:
+        cached_data, timestamp = places_cache[cache_key]
+        if datetime.now() - timestamp < CACHE_DURATION:
+            print(f"✅ Using cached places data from memory (age: {(datetime.now() - timestamp).seconds // 60} minutes)")
+            return cached_data
+        else:
+            print(f"⚠️ Memory cache expired for key: {cache_key}")
+            del places_cache[cache_key]
+    
+    # Check Firebase cache (persistent across restarts)
+    if db:
+        try:
+            # Use a hash of the cache key for Firebase doc ID (to avoid special characters)
+            cache_id = str(abs(hash(cache_key)))
+            cache_doc = db.collection('places_cache').document(cache_id).get()
+            
+            if cache_doc.exists:
+                cache_data = cache_doc.to_dict()
+                cached_timestamp = cache_data.get('timestamp')
+                
+                if cached_timestamp and (datetime.now() - cached_timestamp.replace(tzinfo=None)) < CACHE_DURATION:
+                    places_data = cache_data.get('places', [])
+                    print(f"✅ Using cached places from Firebase (age: {(datetime.now() - cached_timestamp.replace(tzinfo=None)).seconds // 60} minutes)")
+                    
+                    # Store in memory cache for faster subsequent access
+                    places_cache[cache_key] = (places_data, datetime.now())
+                    return places_data
+                else:
+                    print(f"⚠️ Firebase cache expired, deleting...")
+                    db.collection('places_cache').document(cache_id).delete()
+        except Exception as e:
+            print(f"⚠️ Error reading Firebase cache: {e}")
+    
+    return None
+
+def set_cached_places(cache_key, data):
+    """Cache places data with timestamp (both memory and Firebase)"""
+    # Store in memory cache
+    places_cache[cache_key] = (data, datetime.now())
+    print(f"💾 Cached {len(data)} places in memory for key: {cache_key}")
+    
+    # Store in Firebase for persistence
+    if db:
+        try:
+            cache_id = str(abs(hash(cache_key)))
+            db.collection('places_cache').document(cache_id).set({
+                'cache_key': cache_key,
+                'places': data,
+                'timestamp': firestore.SERVER_TIMESTAMP,
+                'count': len(data)
+            })
+            print(f"💾 Cached {len(data)} places in Firebase")
+        except Exception as e:
+            print(f"⚠️ Error caching to Firebase: {e}")
+
+def sanitize_for_json(obj):
+    """
+    Sanitize objects for JSON serialization, handling Firebase DatetimeWithNanoseconds
+    and other non-serializable types.
+    """
+    from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
+    from datetime import datetime, date
+    
+    if isinstance(obj, DatetimeWithNanoseconds):
+        return obj.isoformat()
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: sanitize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(item) for item in obj]
+    else:
+        return obj
 
 def sanitize_user_data_for_logs(data): 
     """Sanitize user data for logging"""
@@ -213,7 +295,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     try:
-        gemini_model = genai.GenerativeModel('gemini-2.5-pro')
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
         print("✅ Google Gemini AI initialized successfully")
     except Exception as e:
         print(f"⚠️  Gemini initialization error: {e}")
@@ -770,8 +852,23 @@ def check_and_send_notifications():
                 
                 # Check if task is for today
                 task_day = task_data.get('day', '').lower()
+                task_week_offset = task_data.get('weekOffset', 0)
+                
+                # Only process tasks for THIS WEEK (weekOffset 0) and TODAY
+                if task_week_offset != 0:
+                    continue  # Skip tasks from other weeks
+                    
                 if task_day not in [current_day, 'today', '']:
                     continue  # Skip tasks not scheduled for today
+                
+                # Additional check: Skip very old tasks (created more than 7 days ago)
+                task_created_at = task_data.get('created_at')
+                if task_created_at:
+                    if isinstance(task_created_at, datetime):
+                        days_old = (current_time - task_created_at).days
+                        if days_old > 7:
+                            print(f"   ⏭️ Skipping old task from {days_old} days ago: '{task_data.get('title')}'")
+                            continue
                 
                 try:
                     # Parse task time as naive datetime first
@@ -1747,22 +1844,26 @@ def send_sporadic_inspiration():
 
 def run_scheduler():
     """Run the notification scheduler in background"""
-    # Check for task notifications every 5 minutes (reduced frequency)
+    print("📅 Starting notification scheduler...")
+    
+    # Check for task notifications every 5 minutes
     schedule.every(5).minutes.do(check_and_send_notifications)
     
-    # Send daily summary only once at 8 PM
-    schedule.every().day.at("20:00").do(send_daily_summary)
+    # Check for daily summaries every 5 minutes (user-specific times handled in function)
+    # This ensures users get summaries at their preferred time regardless of timezone
+    schedule.every(5).minutes.do(send_daily_summary)
     
-    # Send sporadic inspirations at random times throughout the day
-    schedule.every().day.at("09:30").do(send_sporadic_inspiration)
-    schedule.every().day.at("11:45").do(send_sporadic_inspiration)
-    schedule.every().day.at("14:20").do(send_sporadic_inspiration)
-    schedule.every().day.at("16:10").do(send_sporadic_inspiration)
-    schedule.every().day.at("18:35").do(send_sporadic_inspiration)
+    # Send sporadic inspirations every 15 minutes (smart logic inside function decides who gets them)
+    schedule.every(15).minutes.do(send_sporadic_inspiration)
+    
+    print("📅 Scheduler configured:")
+    print("  - Task notifications: every 5 minutes")
+    print("  - Daily summaries: every 5 minutes (checks user preferences)")
+    print("  - Sporadic inspiration: every 15 minutes (smart distribution)")
     
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(60)  # Check every minute
 
 # Weather functionality using OpenWeatherMap API
 def get_weather_icon_class(weather_id, is_day=True):
@@ -2051,12 +2152,21 @@ def search_cities(query, limit=10):
 # For Vercel deployment, use the cron API endpoints (/api/cron/check-notifications, etc.)
 # triggered by Vercel Cron Jobs or external cron services like cron-job.org
 #
-# Uncomment below ONLY for local development/testing:
+# Railway/Production Background Scheduler
+# Runs in persistent environment (not Vercel serverless)
 #
-# if db and ENV != 'production':
-#     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-#     scheduler_thread.start()
-#     print("📅 Notification scheduler started (LOCAL DEVELOPMENT ONLY)")
+if db and os.getenv('RAILWAY_ENVIRONMENT'):
+    # Only start scheduler on Railway
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print("📅 Notification scheduler started on Railway")
+elif db and ENV != 'production':
+    # Also run in local development
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print("📅 Notification scheduler started (LOCAL DEVELOPMENT)")
+else:
+    print("⚠️ Scheduler disabled - using Vercel cron jobs or not in Railway environment")
 
 @app.route("/")
 def home():
@@ -2959,9 +3069,92 @@ def test_daily_summary():
         print(f"❌ Test daily summary error: {e}")
         return {"error": f"Test failed: {str(e)}"}, 500
 
+
+def check_time_overlap(new_task, existing_tasks):
+    """
+    Check if a new task overlaps with existing tasks on the same day/week.
+    Returns (has_conflict, conflicting_tasks_list)
+    """
+    def parse_time(time_str):
+        """Convert time string (HH:MM or H:MM AM/PM) to minutes since midnight"""
+        try:
+            time_str = time_str.strip()
+            # Handle 24-hour format
+            if ':' in time_str and ('AM' not in time_str.upper() and 'PM' not in time_str.upper()):
+                hours, minutes = map(int, time_str.split(':'))
+                return hours * 60 + minutes
+            # Handle 12-hour format
+            else:
+                time_str = time_str.upper()
+                is_pm = 'PM' in time_str
+                time_str = time_str.replace('AM', '').replace('PM', '').strip()
+                hours, minutes = map(int, time_str.split(':'))
+                if is_pm and hours != 12:
+                    hours += 12
+                elif not is_pm and hours == 12:
+                    hours = 0
+                return hours * 60 + minutes
+        except:
+            return None
+    
+    # Extract new task details
+    new_day = new_task.get('day', '')
+    new_week_offset = new_task.get('weekOffset', 0)
+    new_time = new_task.get('time', '')
+    
+    if not new_time or '-' not in new_time:
+        return False, []  # Can't check without time range
+    
+    try:
+        new_start_str, new_end_str = new_time.split('-')
+        new_start = parse_time(new_start_str)
+        new_end = parse_time(new_end_str)
+        
+        if new_start is None or new_end is None:
+            return False, []  # Invalid time format
+    except:
+        return False, []
+    
+    conflicting_tasks = []
+    
+    for task in existing_tasks:
+        # Skip completed tasks
+        if task.get('completed', False):
+            continue
+        
+        # Check if same day and week
+        if task.get('day') != new_day or task.get('weekOffset', 0) != new_week_offset:
+            continue
+        
+        task_time = task.get('time', '')
+        if not task_time or '-' not in task_time:
+            continue
+        
+        try:
+            task_start_str, task_end_str = task_time.split('-')
+            task_start = parse_time(task_start_str)
+            task_end = parse_time(task_end_str)
+            
+            if task_start is None or task_end is None:
+                continue
+            
+            # Check for overlap: tasks overlap if one starts before the other ends
+            if (new_start < task_end and new_end > task_start):
+                conflicting_tasks.append({
+                    'id': task.get('id'),
+                    'title': task.get('title', 'Untitled'),
+                    'time': task_time,
+                    'priority': task.get('priority', 'medium')
+                })
+        except:
+            continue
+    
+    return len(conflicting_tasks) > 0, conflicting_tasks
+
+
 @app.route("/api/tasks", methods=["POST"])
 def save_task():
-    """Save a task to Firestore"""
+    """Save a task to Firestore with time conflict detection"""
     session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_cookie:
         return {"error": "Not authenticated"}, 401
@@ -2977,6 +3170,31 @@ def save_task():
         if not task_data:
             return {"error": "No task data provided"}, 400
         
+        # Check for time conflicts before saving (unless user forces override)
+        force_save = task_data.get('force', False)
+        
+        if not force_save and task_data.get('time') and task_data.get('day'):
+            # Get existing tasks for conflict checking
+            tasks_ref = db.collection('users').document(uid).collection('tasks')
+            existing_tasks_docs = tasks_ref.stream()
+            existing_tasks = [doc.to_dict() for doc in existing_tasks_docs]
+            
+            # Check for conflicts
+            has_conflict, conflicting_tasks = check_time_overlap(task_data, existing_tasks)
+            
+            if has_conflict:
+                print(f"⚠️ Time conflict detected for task '{task_data.get('title')}' with {len(conflicting_tasks)} existing task(s)")
+                return jsonify({
+                    "status": "conflict",
+                    "message": "This task overlaps with existing tasks",
+                    "conflicts": conflicting_tasks,
+                    "new_task": {
+                        "title": task_data.get('title'),
+                        "time": task_data.get('time'),
+                        "day": task_data.get('day')
+                    }
+                }), 409  # 409 Conflict status code
+        
         # Add metadata
         task_data.update({
             'created_at': datetime.now(),
@@ -2984,6 +3202,9 @@ def save_task():
             'id': task_data.get('id', str(uuid.uuid4())),
             'completed': task_data.get('completed', False)
         })
+        
+        # Remove 'force' flag before saving
+        task_data.pop('force', None)
         
         # Save to Firestore
         tasks_ref = db.collection('users').document(uid).collection('tasks')
@@ -3567,9 +3788,15 @@ def health_check():
         # Check database connection
         db_status = "healthy" if db else "unhealthy"
         
+        # Check if scheduler is running (Railway specific)
+        scheduler_status = "running" if os.getenv('RAILWAY_ENVIRONMENT') and db else "disabled"
+        if ENV != 'production' and not os.getenv('RAILWAY_ENVIRONMENT'):
+            scheduler_status = "dev_mode"
+        
         # Check critical services
         services = {
             "database": db_status,
+            "scheduler": scheduler_status,
             "email": "configured" if SMTP_USERNAME and SMTP_PASSWORD else "not_configured",
             "push": "available",  # Push notifications available through Web Push API
             "weather": "configured" if OPENWEATHERMAP_API_KEY else "not_configured", 
@@ -3584,6 +3811,7 @@ def health_check():
             "status": "healthy" if is_healthy else "unhealthy",
             "timestamp": datetime.now().isoformat(),
             "environment": ENV,
+            "platform": "railway" if os.getenv('RAILWAY_ENVIRONMENT') else "vercel" if os.getenv('VERCEL') else "local",
             "services": services,
             "version": "2.0.0"
         }), status_code
@@ -4048,6 +4276,66 @@ When user asks about places/restaurants/nearby activities:
 
 """
         
+        # Get ALL existing tasks for the user to provide context and avoid time conflicts
+        all_user_tasks = []
+        try:
+            if db:
+                tasks_ref = db.collection('users').document(uid).collection('tasks')
+                all_tasks_docs = tasks_ref.stream()
+                for task_doc in all_tasks_docs:
+                    task_data = task_doc.to_dict()
+                    # Only include non-completed tasks for conflict checking
+                    if not task_data.get('completed', False):
+                        all_user_tasks.append({
+                            'id': task_doc.id,
+                            'title': task_data.get('title', 'Untitled'),
+                            'day': task_data.get('day', ''),
+                            'time': task_data.get('time', ''),
+                            'weekOffset': task_data.get('weekOffset', 0),
+                            'priority': task_data.get('priority', 'medium')
+                        })
+                print(f"📋 Loaded {len(all_user_tasks)} existing tasks for conflict avoidance")
+        except Exception as e:
+            print(f"⚠️ Could not load existing tasks: {e}")
+        
+        # Format existing tasks by day for easy reference
+        tasks_by_day = {}
+        for task in all_user_tasks:
+            day = task.get('day', '')
+            week = task.get('weekOffset', 0)
+            key = f"{day}_week{week}"
+            if key not in tasks_by_day:
+                tasks_by_day[key] = []
+            tasks_by_day[key].append(task)
+        
+        existing_tasks_context = "\n\nEXISTING TASKS (AVOID TIME CONFLICTS!):\n"
+        if all_user_tasks:
+            existing_tasks_context += f"Total active tasks: {len(all_user_tasks)}\n\n"
+            # Show tasks grouped by day
+            for day_key, day_tasks in sorted(tasks_by_day.items()):
+                day_name = day_key.split('_week')[0]
+                week_offset = day_key.split('_week')[1]
+                existing_tasks_context += f"📅 {day_name} (Week {week_offset}):\n"
+                for task in sorted(day_tasks, key=lambda x: x.get('time', '')):
+                    time_str = task.get('time', 'No time')
+                    priority_emoji = '🔴' if task['priority'] == 'high' else '🟡' if task['priority'] == 'medium' else '🟢'
+                    existing_tasks_context += f"  - {priority_emoji} {time_str}: {task['title']}\n"
+                existing_tasks_context += "\n"
+            
+            existing_tasks_context += """
+⚠️ CRITICAL CONFLICT AVOIDANCE RULES:
+1. NEVER schedule a new task that overlaps with existing task times
+2. Check the existing tasks above BEFORE creating new tasks
+3. If a time slot is taken, choose a different time (before or after)
+4. Example: If "Meeting" exists at 14:00-15:00, schedule new tasks at 13:00-14:00 or 15:00-16:00 instead
+5. Leave at least 15-30 minute buffer between tasks when possible
+6. If the entire day is full, suggest the next available day or ask user for preferences
+7. When user requests a specific time that conflicts, politely mention the conflict and suggest alternatives
+
+"""
+        else:
+            existing_tasks_context += "No existing tasks - you have full freedom to schedule!\n"
+        
         # Create context-aware prompt
         system_prompt = f"""You are a helpful daily planning assistant that can both provide advice AND create comprehensive tasks directly in the user's planner. You can also MANAGE EXISTING TASKS by editing, deleting, or completing them.
 
@@ -4161,6 +4449,7 @@ Current Context:
 - Tasks scheduled today: {tasks_today}
 - Tasks completed today: {completed_today}
 - Upcoming tasks: {json.dumps(upcoming_tasks, indent=2) if upcoming_tasks else 'No upcoming tasks scheduled'}
+{existing_tasks_context}
 
 TASK TARGETING TIPS:
 - Each task has an ID and title. When possible, use taskId for precise targeting
@@ -4310,199 +4599,289 @@ TASK SUGGESTIONS WHEN USER HAS PREFERENCES:
 
 User Question: {user_message}"""
 
-        # Generate response using Gemini
-        print("🤖 Sending request to Gemini...")
-        response = gemini_model.generate_content(system_prompt)
-        response_text = response.text
-        print(f"✅ Gemini response received: {response_text[:100]}...")
+        # Generate response using Gemini with streaming for faster perceived response
+        print("🤖 Sending request to Gemini with streaming...")
         
-        # Parse tasks from response but don't save to database yet
-        # Let the frontend handle task creation to avoid duplicates
-        created_tasks = []
-        if "---TASKS---" in response_text and "---END-TASKS---" in response_text:
-            try:
-                task_start = response_text.find("---TASKS---") + len("---TASKS---")
-                task_end = response_text.find("---END-TASKS---")
-                task_json_str = response_text[task_start:task_end].strip()
-                
-                print(f"📋 Parsing tasks from JSON: {task_json_str[:200]}...")
-                tasks_data = json.loads(task_json_str)
-                
-                # Process each task but DON'T save to Firebase yet (frontend will handle this)
-                for task_data in tasks_data:
-                    # Just format the task data for frontend processing (no Firebase save here)
-                    task = {
-                        "title": task_data.get("title", "Untitled Task"),
-                        "description": task_data.get("description", ""),
-                        "startTime": task_data.get("startTime", "09:00"),
-                        "endTime": task_data.get("endTime", "10:00"),
-                        "day": task_data.get("day", "Monday"),
-                        "weekOffset": task_data.get("weekOffset", 0),
-                        "priority": task_data.get("priority", "medium"),
-                        "color": task_data.get("color", "#4ECDC4"),
-                        "completed": False,
-                        "createdBy": "assistant"
-                    }
+        # Check if client supports streaming
+        use_streaming = data.get('streaming', True)
+        
+        if use_streaming:
+            # Stream response for faster user experience
+            def generate_stream():
+                """Generator function for streaming responses"""
+                try:
+                    response = gemini_model.generate_content(system_prompt, stream=True)
+                    full_response = ""
                     
-                    created_tasks.append(task)
-                    print(f"📝 Prepared task for frontend: {task['title']} ({task['startTime']}-{task['endTime']})")
-                
-                # Clean response text (remove task section)
-                clean_response = response_text[:response_text.find("---TASKS---")].strip()
-                if not clean_response:
-                    task_count = len(created_tasks)
-                    clean_response = f"I've created {task_count} tasks for you! Check your planner to see them."
-                
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON parsing error: {e}")
-                print(f"Raw task data: {task_json_str}")
-            except Exception as e:
-                print(f"❌ Task processing error: {e}")
+                    # Buffer the complete response first (don't stream raw chunks)
+                    for chunk in response:
+                        if chunk.text:
+                            full_response += chunk.text
+                    
+                    print(f"✅ Streaming complete. Full response: {full_response[:100]}...")
+                    
+                    # Parse tasks from complete response
+                    created_tasks = []
+                    clean_response = full_response
+                    
+                    if "---TASKS---" in full_response and "---END-TASKS---" in full_response:
+                        try:
+                            task_start = full_response.find("---TASKS---") + len("---TASKS---")
+                            task_end = full_response.find("---END-TASKS---")
+                            task_json_str = full_response[task_start:task_end].strip()
+                            
+                            print(f"📋 Found task markers! Parsing JSON: {task_json_str[:200]}...")
+                            tasks_data = json.loads(task_json_str)
+                            print(f"✅ Successfully parsed {len(tasks_data)} tasks from JSON")
+                            
+                            for task_data in tasks_data:
+                                task = {
+                                    "title": task_data.get("title", "Untitled Task"),
+                                    "description": task_data.get("description", ""),
+                                    "startTime": task_data.get("startTime", "09:00"),
+                                    "endTime": task_data.get("endTime", "10:00"),
+                                    "day": task_data.get("day", "Monday"),
+                                    "weekOffset": task_data.get("weekOffset", 0),
+                                    "priority": task_data.get("priority", "medium"),
+                                    "color": task_data.get("color", "#4ECDC4"),
+                                    "completed": False,
+                                    "createdBy": "assistant"
+                                }
+                                created_tasks.append(task)
+                                print(f"   ✅ Prepared task: {task['title']} on {task['day']} at {task['startTime']}-{task['endTime']}")
+                            
+                            # Remove task markers from response
+                            clean_response = full_response[:full_response.find("---TASKS---")].strip()
+                            if not clean_response:
+                                task_count = len(created_tasks)
+                                clean_response = f"I've added {task_count} {'task' if task_count == 1 else 'tasks'} to your planner!"
+                        except Exception as e:
+                            print(f"⚠️ Task parsing error in stream: {e}")
+                            print(f"   Raw task JSON: {task_json_str}")
+                            import traceback
+                            traceback.print_exc()
+                            # Remove task markers even if parsing fails
+                            if "---TASKS---" in clean_response:
+                                clean_response = full_response[:full_response.find("---TASKS---")].strip()
+                    else:
+                        print(f"ℹ️ No task markers found in response")
+                    
+                    print(f"📤 Sending {len(created_tasks)} tasks to frontend...")
+                    
+                    # Stream the CLEAN response word by word for smooth typewriter effect
+                    words = clean_response.split()
+                    for word in words:
+                        yield f"data: {json.dumps({'chunk': word + ' ', 'done': False})}\n\n"
+                    
+                    # Send final message with tasks
+                    final_data = {'chunk': '', 'done': True, 'response': clean_response, 'tasks': created_tasks}
+                    print(f"📨 Final SSE data: {json.dumps(final_data)[:200]}...")
+                    yield f"data: {json.dumps(final_data)}\n\n"
+                    
+                except Exception as e:
+                    print(f"❌ Streaming error: {e}")
+                    yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+            
+            # Return streaming response
+            return Response(generate_stream(), mimetype='text/event-stream', headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'
+            })
         else:
-            clean_response = response_text
+            # Non-streaming fallback
+            response = gemini_model.generate_content(system_prompt)
+            response_text = response.text
+            print(f"✅ Gemini response received: {response_text[:100]}...")
         
-        # Process task management actions
-        task_actions_performed = []
-        if "---TASK-ACTIONS---" in response_text and "---END-TASK-ACTIONS---" in response_text:
-            try:
-                action_start = response_text.find("---TASK-ACTIONS---") + len("---TASK-ACTIONS---")
-                action_end = response_text.find("---END-TASK-ACTIONS---")
-                action_json_str = response_text[action_start:action_end].strip()
-                
-                print(f"🔧 Parsing task actions from JSON: {action_json_str[:200]}...")
-                actions_data = json.loads(action_json_str)
-                
-                # Process each action
-                for action_data in actions_data:
-                    action_type = action_data.get("action")
-                    task_id = action_data.get("taskId")
-                    title_search = action_data.get("titleSearch")
-                    updates = action_data.get("updates", {})
-                    reason = action_data.get("reason", "Assistant action")
+            # Parse tasks from response but don't save to database yet
+            # Let the frontend handle task creation to avoid duplicates
+            created_tasks = []
+            if "---TASKS---" in response_text and "---END-TASKS---" in response_text:
+                try:
+                    task_start = response_text.find("---TASKS---") + len("---TASKS---")
+                    task_end = response_text.find("---END-TASKS---")
+                    task_json_str = response_text[task_start:task_end].strip()
                     
-                    print(f"🔧 Processing action: {action_type} for task: {task_id or title_search}")
+                    print(f"📋 Parsing tasks from JSON: {task_json_str[:200]}...")
+                    tasks_data = json.loads(task_json_str)
                     
-                    if not db:
-                        print("❌ Database not available for task actions")
-                        continue
+                    # Process each task but DON'T save to Firebase yet (frontend will handle this)
+                    for task_data in tasks_data:
+                        # Just format the task data for frontend processing (no Firebase save here)
+                        task = {
+                            "title": task_data.get("title", "Untitled Task"),
+                            "description": task_data.get("description", ""),
+                            "startTime": task_data.get("startTime", "09:00"),
+                            "endTime": task_data.get("endTime", "10:00"),
+                            "day": task_data.get("day", "Monday"),
+                            "weekOffset": task_data.get("weekOffset", 0),
+                            "priority": task_data.get("priority", "medium"),
+                            "color": task_data.get("color", "#4ECDC4"),
+                            "completed": False,
+                            "createdBy": "assistant"
+                        }
+                        
+                        created_tasks.append(task)
+                        print(f"📝 Prepared task for frontend: {task['title']} ({task['startTime']}-{task['endTime']})")
                     
-                    tasks_ref = db.collection('users').document(uid).collection('tasks')
+                    # Clean response text (remove task section)
+                    clean_response = response_text[:response_text.find("---TASKS---")].strip()
+                    if not clean_response:
+                        task_count = len(created_tasks)
+                        clean_response = f"I've created {task_count} tasks for you! Check your planner to see them."
                     
-                    # Find tasks to act upon
-                    tasks_to_process = []
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON parsing error: {e}")
+                    print(f"Raw task data: {task_json_str}")
+                    clean_response = response_text
+                except Exception as e:
+                    print(f"❌ Task processing error: {e}")
+                    clean_response = response_text
+            else:
+                clean_response = response_text
+        
+            # Process task management actions (non-streaming)
+            task_actions_performed = []
+            if "---TASK-ACTIONS---" in response_text and "---END-TASK-ACTIONS---" in response_text:
+                try:
+                    action_start = response_text.find("---TASK-ACTIONS---") + len("---TASK-ACTIONS---")
+                    action_end = response_text.find("---END-TASK-ACTIONS---")
+                    action_json_str = response_text[action_start:action_end].strip()
                     
-                    if task_id:
-                        # Direct task ID lookup
-                        try:
-                            task_doc = tasks_ref.document(task_id).get()
-                            if task_doc.exists:
-                                tasks_to_process.append((task_id, task_doc.to_dict()))
-                        except Exception as e:
-                            print(f"❌ Error finding task by ID {task_id}: {e}")
+                    print(f"🔧 Parsing task actions from JSON: {action_json_str[:200]}...")
+                    actions_data = json.loads(action_json_str)
                     
-                    elif title_search:
-                        # Search by title - be more precise and limit results
-                        try:
-                            all_tasks = tasks_ref.stream()
-                            found_count = 0
-                            for task_doc in all_tasks:
-                                task_data = task_doc.to_dict()
-                                task_title = task_data.get('title', '').lower()
-                                search_term = title_search.lower().strip()
-                                
-                                # More precise matching: exact match or starts with
-                                if (task_title == search_term or 
-                                    task_title.startswith(search_term) or 
-                                    (len(search_term) > 3 and search_term in task_title)):
-                                    tasks_to_process.append((task_doc.id, task_data))
-                                    found_count += 1
+                    # Process each action
+                    for action_data in actions_data:
+                        action_type = action_data.get("action")
+                        task_id = action_data.get("taskId")
+                        title_search = action_data.get("titleSearch")
+                        updates = action_data.get("updates", {})
+                        reason = action_data.get("reason", "Assistant action")
+                        
+                        print(f"🔧 Processing action: {action_type} for task: {task_id or title_search}")
+                        
+                        if not db:
+                            print("❌ Database not available for task actions")
+                            continue
+                        
+                        tasks_ref = db.collection('users').document(uid).collection('tasks')
+                        
+                        # Find tasks to act upon
+                        tasks_to_process = []
+                        
+                        if task_id:
+                            # Direct task ID lookup
+                            try:
+                                task_doc = tasks_ref.document(task_id).get()
+                                if task_doc.exists:
+                                    tasks_to_process.append((task_id, task_doc.to_dict()))
+                            except Exception as e:
+                                print(f"❌ Error finding task by ID {task_id}: {e}")
+                        
+                        elif title_search:
+                            # Search by title - be more precise and limit results
+                            try:
+                                all_tasks = tasks_ref.stream()
+                                found_count = 0
+                                for task_doc in all_tasks:
+                                    task_data = task_doc.to_dict()
+                                    task_title = task_data.get('title', '').lower()
+                                    search_term = title_search.lower().strip()
                                     
-                                    # Safety limit: don't delete too many tasks at once
-                                    if found_count >= 3 and action_type == "delete":
-                                        print(f"⚠️ Limiting search results to prevent mass deletion (found {found_count})")
-                                        break
+                                    # More precise matching: exact match or starts with
+                                    if (task_title == search_term or 
+                                        task_title.startswith(search_term) or 
+                                        (len(search_term) > 3 and search_term in task_title)):
+                                        tasks_to_process.append((task_doc.id, task_data))
+                                        found_count += 1
                                         
-                        except Exception as e:
-                            print(f"❌ Error searching tasks by title '{title_search}': {e}")
-                    
-                    # Perform actions on found tasks
-                    for task_id_to_process, task_data in tasks_to_process:
-                        try:
-                            if action_type == "delete":
-                                tasks_ref.document(task_id_to_process).delete()
-                                task_actions_performed.append({
-                                    "action": "deleted",
-                                    "task": task_data.get('title', 'Unknown task'),
-                                    "taskId": task_id_to_process,
-                                    "reason": reason
-                                })
-                                print(f"✅ Deleted task: {task_data.get('title')}")
-                            
-                            elif action_type == "edit":
-                                # Update with provided changes
-                                update_data = {**updates, 'updated_at': datetime.now()}
-                                tasks_ref.document(task_id_to_process).update(update_data)
-                                task_actions_performed.append({
-                                    "action": "edited",
-                                    "task": task_data.get('title', 'Unknown task'),
-                                    "taskId": task_id_to_process,
-                                    "changes": updates,
-                                    "reason": reason
-                                })
-                                print(f"✅ Edited task: {task_data.get('title')} with {updates}")
-                            
-                            elif action_type == "complete":
-                                tasks_ref.document(task_id_to_process).update({
-                                    'completed': True,
-                                    'completedAt': datetime.now().isoformat(),
-                                    'updated_at': datetime.now()
-                                })
-                                task_actions_performed.append({
-                                    "action": "completed",
-                                    "task": task_data.get('title', 'Unknown task'),
-                                    "taskId": task_id_to_process,
-                                    "reason": reason
-                                })
-                                print(f"✅ Completed task: {task_data.get('title')}")
-                            
-                            elif action_type == "uncomplete":
-                                tasks_ref.document(task_id_to_process).update({
-                                    'completed': False,
-                                    'completedAt': None,
-                                    'updated_at': datetime.now()
-                                })
-                                task_actions_performed.append({
-                                    "action": "uncompleted",
-                                    "task": task_data.get('title', 'Unknown task'),
-                                    "taskId": task_id_to_process,
-                                    "reason": reason
-                                })
-                                print(f"✅ Uncompleted task: {task_data.get('title')}")
+                                        # Safety limit: don't delete too many tasks at once
+                                        if found_count >= 3 and action_type == "delete":
+                                            print(f"⚠️ Limiting search results to prevent mass deletion (found {found_count})")
+                                            break
+                                            
+                            except Exception as e:
+                                print(f"❌ Error searching tasks by title '{title_search}': {e}")
+                        
+                        # Perform actions on found tasks
+                        for task_id_to_process, task_data in tasks_to_process:
+                            try:
+                                if action_type == "delete":
+                                    tasks_ref.document(task_id_to_process).delete()
+                                    task_actions_performed.append({
+                                        "action": "deleted",
+                                        "task": task_data.get('title', 'Unknown task'),
+                                        "taskId": task_id_to_process,
+                                        "reason": reason
+                                    })
+                                    print(f"✅ Deleted task: {task_data.get('title')}")
                                 
-                        except Exception as e:
-                            print(f"❌ Error performing {action_type} on task {task_data.get('title')}: {e}")
-                
-                # Clean response text (remove task actions section)
-                clean_response = clean_response.replace(response_text[response_text.find("---TASK-ACTIONS---"):response_text.find("---END-TASK-ACTIONS---") + len("---END-TASK-ACTIONS---")], "").strip()
+                                elif action_type == "edit":
+                                    # Update with provided changes
+                                    update_data = {**updates, 'updated_at': datetime.now()}
+                                    tasks_ref.document(task_id_to_process).update(update_data)
+                                    task_actions_performed.append({
+                                        "action": "edited",
+                                        "task": task_data.get('title', 'Unknown task'),
+                                        "taskId": task_id_to_process,
+                                        "changes": updates,
+                                        "reason": reason
+                                    })
+                                    print(f"✅ Edited task: {task_data.get('title')} with {updates}")
+                                
+                                elif action_type == "complete":
+                                    tasks_ref.document(task_id_to_process).update({
+                                        'completed': True,
+                                        'completedAt': datetime.now().isoformat(),
+                                        'updated_at': datetime.now()
+                                    })
+                                    task_actions_performed.append({
+                                        "action": "completed",
+                                        "task": task_data.get('title', 'Unknown task'),
+                                        "taskId": task_id_to_process,
+                                        "reason": reason
+                                    })
+                                    print(f"✅ Completed task: {task_data.get('title')}")
+                                
+                                elif action_type == "uncomplete":
+                                    tasks_ref.document(task_id_to_process).update({
+                                        'completed': False,
+                                        'completedAt': None,
+                                        'updated_at': datetime.now()
+                                    })
+                                    task_actions_performed.append({
+                                        "action": "uncompleted",
+                                        "task": task_data.get('title', 'Unknown task'),
+                                        "taskId": task_id_to_process,
+                                        "reason": reason
+                                    })
+                                    print(f"✅ Uncompleted task: {task_data.get('title')}")
+                                    
+                            except Exception as e:
+                                print(f"❌ Error performing {action_type} on task {task_data.get('title')}: {e}")
                     
-                # Add summary of actions if any were performed
-                if task_actions_performed and not clean_response:
-                    action_count = len(task_actions_performed)
-                    clean_response = f"I've performed {action_count} task action{'s' if action_count != 1 else ''} for you!"
-                
-            except json.JSONDecodeError as e:
-                print(f"❌ Task actions JSON parsing error: {e}")
-                print(f"Raw action data: {action_json_str}")
-            except Exception as e:
-                print(f"❌ Task action processing error: {e}")
-        
-        print(f"✅ Successful response with {len(created_tasks)} tasks and {len(task_actions_performed)} actions")
-        return jsonify({
-            "response": clean_response,
-            "tasks": created_tasks,
-            "taskActions": task_actions_performed,
-            "timestamp": datetime.now().isoformat()
-        })
+                    # Clean response text (remove task actions section)
+                    clean_response = clean_response.replace(response_text[response_text.find("---TASK-ACTIONS---"):response_text.find("---END-TASK-ACTIONS---") + len("---END-TASK-ACTIONS---")], "").strip()
+                        
+                    # Add summary of actions if any were performed
+                    if task_actions_performed and not clean_response:
+                        action_count = len(task_actions_performed)
+                        clean_response = f"I've performed {action_count} task action{'s' if action_count != 1 else ''} for you!"
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ Task actions JSON parsing error: {e}")
+                    print(f"Raw action data: {action_json_str}")
+                except Exception as e:
+                    print(f"❌ Task action processing error: {e}")
+            
+            print(f"✅ Successful response with {len(created_tasks)} tasks and {len(task_actions_performed)} actions")
+            return jsonify({
+                "response": clean_response,
+                "tasks": created_tasks,
+                "taskActions": task_actions_performed,
+                "timestamp": datetime.now().isoformat()
+            })
     
     except Exception as e:
         print(f"Assistant API error: {e}")
@@ -5633,9 +6012,129 @@ def generate_sample_events_for_location(location, radius_miles=10):
 
 # ===== REAL API INTEGRATIONS FOR EVENTS & PLACES =====
 
+def get_overpass_places_nearby(location, radius_miles=10, max_results=20, user_preferences=None):
+    """
+    FREE ALTERNATIVE: Get nearby places using Overpass API (OpenStreetMap data)
+    No API key required! Completely free and unlimited.
+    
+    Args:
+        location: Location string (city, address)
+        radius_miles: Search radius in miles
+        max_results: Maximum number of results
+        user_preferences: User preference dict
+        
+    Returns:
+        list: Places from OpenStreetMap
+    """
+    places = []
+    
+    try:
+        # Get coordinates
+        coords = geocode_location(location)
+        if not coords:
+            print(f"❌ Could not geocode location: {location}")
+            return places
+        
+        lat, lon = coords
+        radius_meters = int(radius_miles * 1609.34)
+        
+        # Build query based on user preferences
+        has_dog = user_preferences.get('hasDog', False) if user_preferences else False
+        hobbies = user_preferences.get('hobbies', []) if user_preferences else []
+        
+        # Overpass QL query for various amenities
+        amenity_types = ['restaurant', 'cafe', 'bar', 'park', 'cinema', 'theatre', 
+                         'library', 'museum', 'gym', 'sports_centre']
+        
+        # Add dog-specific if needed
+        if has_dog:
+            amenity_types.extend(['dog_park', 'veterinary'])
+        
+        # Build Overpass query
+        overpass_url = "http://overpass-api.de/api/interpreter"
+        
+        query = f"""
+        [out:json][timeout:25];
+        (
+          node["amenity"~"{'|'.join(amenity_types[:10])}"](around:{radius_meters},{lat},{lon});
+          way["amenity"~"{'|'.join(amenity_types[:10])}"](around:{radius_meters},{lat},{lon});
+        );
+        out center {max_results};
+        """
+        
+        response = requests.get(overpass_url, params={'data': query}, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            elements = data.get('elements', [])
+            
+            for element in elements[:max_results]:
+                tags = element.get('tags', {})
+                name = tags.get('name', 'Unnamed Place')
+                amenity = tags.get('amenity', 'place')
+                
+                # Get coordinates
+                if 'lat' in element and 'lon' in element:
+                    place_lat, place_lon = element['lat'], element['lon']
+                elif 'center' in element:
+                    place_lat = element['center']['lat']
+                    place_lon = element['center']['lon']
+                else:
+                    continue
+                
+                # Calculate distance
+                distance = calculate_distance(lat, lon, place_lat, place_lon)
+                
+                # Map amenity to category and icon
+                category_map = {
+                    'restaurant': ('🍽️', 'Restaurants'),
+                    'cafe': ('☕', 'Cafes'),
+                    'bar': ('🍺', 'Bars'),
+                    'park': ('🌳', 'Parks'),
+                    'dog_park': ('🐕', 'Dog Parks'),
+                    'cinema': ('🎬', 'Entertainment'),
+                    'theatre': ('🎭', 'Theater'),
+                    'library': ('📚', 'Libraries'),
+                    'museum': ('🏛️', 'Museums'),
+                    'gym': ('💪', 'Fitness'),
+                    'sports_centre': ('🏋️', 'Sports'),
+                }
+                
+                icon, category = category_map.get(amenity, ('📍', 'Place'))
+                
+                places.append({
+                    'id': f"osm_{element.get('id')}",
+                    'title': name,
+                    'category': category,
+                    'icon': icon,
+                    'type': 'place',
+                    'date': 'Check hours',
+                    'time': '',
+                    'venue': tags.get('addr:full', tags.get('addr:street', location)),
+                    'distance': round(distance, 1),
+                    'description': f"From OpenStreetMap - {amenity.replace('_', ' ').title()}",
+                    'price': 'Check website',
+                    'website': f"https://www.openstreetmap.org/{element.get('type', 'node')}/{element.get('id')}",
+                    'rating': 'N/A',
+                    'dog_friendly': amenity == 'dog_park' or 'dog' in name.lower(),
+                    'priority': 2  # Lower priority than Google Places
+                })
+            
+            print(f"✅ Found {len(places)} places from OpenStreetMap (FREE)")
+            return places
+        else:
+            print(f"⚠️ Overpass API error: {response.status_code}")
+            return places
+            
+    except Exception as e:
+        print(f"❌ Error with Overpass API: {e}")
+        return places
+
+
 def get_google_places_nearby(location, radius_miles=10, max_results=20, user_preferences=None, custom_query=None):
     """
     Get real nearby places using Google Places API (New) with smart interest-based searching.
+    NOW WITH CACHING to reduce API costs!
     
     Searches for places based on user interests:
     - Basketball lover → basketball courts, sports complexes
@@ -5653,6 +6152,20 @@ def get_google_places_nearby(location, radius_miles=10, max_results=20, user_pre
     Returns:
         list: Real nearby places with details, personalized to user interests
     """
+    # Create cache key based on location and preferences
+    cache_key = f"{location}_{radius_miles}_{max_results}_{custom_query or 'default'}"
+    if user_preferences:
+        # Sanitize user preferences before using in cache key
+        sanitized_prefs = sanitize_for_json(user_preferences)
+        # Add user preference hash to cache key
+        pref_str = json.dumps(sanitized_prefs, sort_keys=True)
+        cache_key += f"_{hash(pref_str)}"
+    
+    # Check cache first
+    cached_places = get_cached_places(cache_key)
+    if cached_places:
+        return cached_places
+    
     places = []
     
     try:
@@ -5923,6 +6436,11 @@ def get_google_places_nearby(location, radius_miles=10, max_results=20, user_pre
                 elif response.status_code == 403:
                     print(f"❌ Google Places API error: Billing not enabled or API not activated")
                     print(f"   Visit: https://console.cloud.google.com/apis/library/places-backend.googleapis.com")
+                    print(f"🔄 Falling back to FREE Overpass API (OpenStreetMap)...")
+                    # Use free Overpass API as fallback
+                    places = get_overpass_places_nearby(location, radius_miles, max_results, user_preferences)
+                    if places:
+                        set_cached_places(cache_key, places)
                     return places
                 else:
                     error_data = response.json() if response.content else {}
@@ -5936,10 +6454,19 @@ def get_google_places_nearby(location, radius_miles=10, max_results=20, user_pre
         # Shuffle for variety on each refresh before returning
         random.shuffle(places)
         
-        print(f"✅ Returning {len(places)} places within {radius_miles} mile radius")
+        # Cache the results to avoid repeated API calls
+        if places:
+            set_cached_places(cache_key, places)
+        
+        print(f"✅ Returning {len(places)} places within {radius_miles} mile radius (cached for 6 hours)")
                 
     except Exception as e:
         print(f"❌ Google Places API error: {e}")
+        print(f"🔄 Falling back to FREE Overpass API (OpenStreetMap)...")
+        # Use free Overpass API as fallback on error
+        places = get_overpass_places_nearby(location, radius_miles, max_results, user_preferences)
+        if places:
+            set_cached_places(cache_key, places)
     
     return places
 
@@ -6111,10 +6638,14 @@ def get_all_recommendations(location, radius_miles=10, max_results=20, user_pref
         # Get MORE results than we'll show (for rotation variety)
         # Get 20 places and 20 ticketmaster events for balanced variety
         places = get_google_places_nearby(location, radius_miles, max_results=20, user_preferences=user_preferences)
-        print(f"✅ Found {len(places)} nearby places")
+        print(f"✅ Found {len(places)} nearby places from Google Places API")
+        if places:
+            print(f"   📍 Sample places: {', '.join([p.get('title', 'Unknown')[:30] for p in places[:3]])}")
         
         tm_events = get_ticketmaster_events(location, radius_miles, max_results=20)
         print(f"✅ Found {len(tm_events)} Ticketmaster events")
+        if tm_events:
+            print(f"   🎫 Sample events: {', '.join([e.get('title', 'Unknown')[:30] for e in tm_events[:3]])}")
         
         # Apply time & weather-based filtering and prioritization
         # Combine places and events into one pool with scoring
@@ -6186,18 +6717,35 @@ def get_all_recommendations(location, radius_miles=10, max_results=20, user_pref
         # Sort by score first
         all_items.sort(key=lambda x: x.get('context_score', 0), reverse=True)
 
-        # Take top items (prioritized by context)
-        selected_items = all_items[:10]
+        # ENSURE EVEN MIX: Take 5 places and 5 events (or as many as available)
+        places_only = [item for item in all_items if item['type'] == 'place']
+        events_only = [item for item in all_items if item['type'] == 'event']
         
-        # Separate back into places and events
-        all_recommendations['places'] = [item for item in selected_items if item['type'] == 'place']
-        all_recommendations['events'] = [item for item in selected_items if item['type'] == 'event']
+        # Shuffle each category to get variety on each refresh
+        random.shuffle(places_only)
+        random.shuffle(events_only)
+        
+        # Take top 5 from each (or all available if less than 5)
+        selected_places = places_only[:5]
+        selected_events = events_only[:5]
+        
+        # Combine them
+        selected_items = selected_places + selected_events
+        
+        # Shuffle the final mix so places and events are interleaved
+        random.shuffle(selected_items)
+        
+        # Update results
+        all_recommendations['places'] = selected_places
+        all_recommendations['events'] = selected_events
         all_recommendations['total'] = len(selected_items)
         
-        print(f"📊 Showing {all_recommendations['total']} recommendations (refreshes every 5 min)")
+        print(f"📊 Showing {len(selected_places)} places + {len(selected_events)} events = {all_recommendations['total']} total (refreshes every 5 min)")
         
     except Exception as e:
         print(f"❌ Error aggregating recommendations: {e}")
+        import traceback
+        traceback.print_exc()
     
     return all_recommendations
 
@@ -6231,6 +6779,8 @@ def get_recommendations():
 
         if prefs_doc.exists:
             user_preferences = prefs_doc.to_dict()
+            # Sanitize preferences to handle Firebase DatetimeWithNanoseconds
+            user_preferences = sanitize_for_json(user_preferences)
             # Get user's location from preferences
             user_location = user_preferences.get('location', '').strip()
             if user_location:
@@ -6337,7 +6887,10 @@ Respond in JSON format:
                             'autoFilled': True
                         }
                         user_ref.collection('preferences').document('main').set(auto_prefs, merge=True)
-                        user_preferences = auto_prefs
+                        
+                        # Create a serializable version for user_preferences (without SERVER_TIMESTAMP)
+                        user_preferences = auto_prefs.copy()
+                        user_preferences['updatedAt'] = datetime.now().isoformat()  # Use ISO string instead
                         auto_filled = True
                         print(f"✅ Auto-filled preferences: {list(preferences_data.keys())}")
                 except Exception as e:
@@ -6351,7 +6904,72 @@ Respond in JSON format:
         # Combine for backward compatibility, but also send separately
         all_recommendations = results['places'] + results['events']
         
-        # If nothing found, provide helpful message based on the reason
+        # FALLBACK: If nothing found from APIs, provide generic suggestions based on location
+        if results['total'] == 0:
+            print(f"⚠️ No results from APIs, generating generic suggestions for {location}...")
+            
+            # Create generic suggestions based on location name
+            location_lower = location.lower()
+            generic_places = []
+            
+            # Add some generic venue types that are common everywhere
+            venue_suggestions = [
+                {'title': f'Coffee Shops & Cafes near {location}', 'icon': '☕', 'category': 'Cafes', 'description': 'Search for local cafes and coffee shops'},
+                {'title': f'Parks & Recreation near {location}', 'icon': '🌳', 'category': 'Parks', 'description': 'Find parks and outdoor spaces'},
+                {'title': f'Restaurants near {location}', 'icon': '🍽️', 'category': 'Dining', 'description': 'Discover dining options nearby'},
+                {'title': f'Beaches near {location}', 'icon': '🏖️', 'category': 'Beaches', 'description': 'Find beaches and waterfront areas (NJ Shore!)'},
+                {'title': f'Shopping near {location}', 'icon': '🛍️', 'category': 'Shopping', 'description': 'Explore shopping centers and stores'},
+                {'title': f'Gyms & Fitness near {location}', 'icon': '💪', 'category': 'Fitness', 'description': 'Find gyms and fitness facilities'},
+                {'title': f'Entertainment near {location}', 'icon': '🎬', 'category': 'Entertainment', 'description': 'Movies, theaters, and fun venues'},
+                {'title': f'Boardwalk Activities near {location}', 'icon': '🎡', 'category': 'Attractions', 'description': 'Check out boardwalks and attractions'},
+            ]
+            
+            # Add based on user preferences if available
+            if user_preferences:
+                if user_preferences.get('hasDog'):
+                    venue_suggestions.append({
+                        'title': f'Dog-Friendly Spots in {location}',
+                        'icon': '🐕',
+                        'category': 'Dog Parks',
+                        'description': 'Find dog parks and pet-friendly venues'
+                    })
+                
+                cuisines = user_preferences.get('cuisineTypes', [])
+                if cuisines and len(cuisines) > 0:
+                    venue_suggestions.append({
+                        'title': f'{cuisines[0].title()} Cuisine in {location}',
+                        'icon': '🍽️',
+                        'category': f'{cuisines[0].title()} Dining',
+                        'description': f'Search for {cuisines[0]} restaurants nearby'
+                    })
+            
+            # Convert to place format
+            for idx, venue in enumerate(venue_suggestions[:10]):
+                generic_places.append({
+                    'id': f'generic_{idx}',
+                    'title': venue['title'],
+                    'category': venue['category'],
+                    'icon': venue['icon'],
+                    'type': 'suggestion',
+                    'date': 'Explore',
+                    'time': '',
+                    'venue': location,
+                    'distance': 'Nearby',
+                    'description': venue['description'],
+                    'price': 'Varies',
+                    'website': f'https://www.google.com/search?q={quote_plus(venue["title"])}',
+                    'rating': 'N/A',
+                    'dog_friendly': 'dog' in venue['title'].lower(),
+                    'priority': 3
+                })
+            
+            results['places'] = generic_places
+            results['total'] = len(generic_places)
+            all_recommendations = generic_places
+            
+            print(f"✅ Generated {len(generic_places)} generic suggestions")
+        
+        # If STILL nothing found, return helpful error
         if results['total'] == 0:
             # Check if user has ANY preferences set
             has_preferences = False
@@ -6362,7 +6980,7 @@ Respond in JSON format:
             if not has_preferences:
                 error_msg = f'No recommendations found. Set your preferences in AI Preferences to get personalized suggestions!'
             else:
-                error_msg = f'No recommendations found near {location}. Try expanding your search radius or check API configuration.'
+                error_msg = f'No recommendations found near {location}. Try expanding your search radius in AI Preferences, or check your location spelling.'
             
             return jsonify({
                 'success': True,
@@ -6373,10 +6991,11 @@ Respond in JSON format:
                 'count': 0,
                 'location': location,
                 'radius': radius,
-                'hasPreferences': has_preferences
+                'hasPreferences': has_preferences,
+                'suggestion': 'Try setting your location to a nearby city or town (e.g., "Asbury Park, NJ" or "Long Branch, NJ")'
             })
         
-        return jsonify({
+        return jsonify(sanitize_for_json({
             'success': True,
             'recommendations': all_recommendations,  # Combined list
             'places': results['places'],  # Separate places
@@ -6387,7 +7006,7 @@ Respond in JSON format:
             'location': location,
             'radius': radius,
             'autoFilled': auto_filled  # Let frontend know preferences were auto-filled
-        })
+        }))
     
     except Exception as e:
         print(f"❌ Recommendations error: {e}")

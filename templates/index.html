@@ -852,6 +852,34 @@
                             </div>
                         </div>
 
+                        <!-- AI Performance Settings -->
+                        <div class="pref-group" style="background: rgba(103,58,183,0.05); border: 1px solid rgba(103,58,183,0.2); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <div>
+                                    <label style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px; display: block;">
+                                        ⚡ Fast Streaming Responses
+                                    </label>
+                                    <p class="pref-hint" style="margin: 0;">Get AI responses word-by-word as they're generated (recommended for faster experience)</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="ai-streaming-toggle" checked aria-label="Enable AI streaming" />
+                                    <span class="switch-track">
+                                        <span class="switch-thumb"></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div id="streaming-info" style="background: rgba(103,58,183,0.1); border-left: 3px solid #673AB7; padding: 12px; border-radius: 6px;">
+                                <p style="margin: 0; font-size: 13px; color: #9575CD;">
+                                    ⚡ <strong>Streaming Enabled:</strong> AI responses appear instantly as they're generated, making the assistant feel much faster and more responsive.
+                                </p>
+                            </div>
+                            <div id="no-streaming-info" style="display: none; background: rgba(158,158,158,0.1); border-left: 3px solid #9E9E9E; padding: 12px; border-radius: 6px; margin-top: 12px;">
+                                <p style="margin: 0; font-size: 13px; color: #9E9E9E;">
+                                    📦 <strong>Streaming Disabled:</strong> You'll wait for the complete response before seeing any text. Enable streaming for a better experience.
+                                </p>
+                            </div>
+                        </div>
+
                         <!-- Auto-fill from Tasks -->
                         <div class="pref-group" id="autofill-section" style="background: rgba(76,175,80,0.05); border: 1px solid rgba(76,175,80,0.2); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">

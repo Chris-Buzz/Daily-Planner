@@ -177,8 +177,8 @@ deployment-readiness.md
 planner.log
 *.log
 
-# Heroku/Other platform files (using Vercel)
-Procfile
+# Heroku/Other platform files (keeping Procfile for Railway/Heroku compatibility)
+# Procfile - Now needed for Railway
 requirements-prod.txt
 
 # Python cache

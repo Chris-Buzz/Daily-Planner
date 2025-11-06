@@ -652,12 +652,28 @@ const ui = {
 
   updateWeekLabel(direction = null) {
     const offset = state.weekOffset;
+    
+    // Calculate if offset 0 is actually the current week
+    // We need to check if the week start date matches today's week start
+    const today = new Date();
+    const currentDayOfWeek = today.getDay(); // 0 = Sunday
+    const currentWeekStart = new Date(today);
+    currentWeekStart.setDate(today.getDate() - currentDayOfWeek);
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    // Calculate the week start for the viewed offset
+    const viewedWeekStart = new Date(currentWeekStart);
+    viewedWeekStart.setDate(currentWeekStart.getDate() + (offset * 7));
+    
+    // Compare week starts to determine the actual offset from current week
+    const weeksDifference = Math.round((viewedWeekStart - currentWeekStart) / (7 * 24 * 60 * 60 * 1000));
+    
     let label = 'This Week';
     
-    if (offset === -1) label = 'Last Week';
-    else if (offset === 1) label = 'Next Week';
-    else if (offset < -1) label = `${Math.abs(offset)} Weeks Ago`;
-    else if (offset > 1) label = `${offset} Weeks Ahead`;
+    if (weeksDifference === -1) label = 'Last Week';
+    else if (weeksDifference === 1) label = 'Next Week';
+    else if (weeksDifference < -1) label = `${Math.abs(weeksDifference)} Weeks Ago`;
+    else if (weeksDifference > 1) label = `${weeksDifference} Weeks Ahead`;
     
     // Add slide animation if direction is provided
     if (direction && elements.weekLabel) {
@@ -1293,6 +1309,80 @@ const notifications = {
   }
 };
 
+// ===== Task Conflict Handler =====
+const conflictHandler = {
+  /**
+   * Handle time conflict response from server
+   * Shows a modal asking user whether to:
+   * 1. Reschedule the new task
+   * 2. Force save anyway (overlap tasks)
+   * 3. Cancel
+   */
+  async handleConflict(conflictResponse, taskData) {
+    const conflicts = conflictResponse.conflicts || [];
+    const newTask = conflictResponse.new_task || taskData;
+    
+    // Build conflict message
+    let message = `⚠️ <strong>Time Conflict Detected!</strong><br><br>`;
+    message += `Your new task "<strong>${newTask.title}</strong>" (${newTask.time}) overlaps with:<br><br>`;
+    
+    conflicts.forEach((conflict, index) => {
+      const priorityEmoji = conflict.priority === 'high' ? '🔴' : conflict.priority === 'medium' ? '🟡' : '🟢';
+      message += `${index + 1}. ${priorityEmoji} <strong>${conflict.title}</strong> (${conflict.time})<br>`;
+    });
+    
+    message += `<br>What would you like to do?`;
+    
+    // Create custom modal with options
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'conflict-modal-overlay';
+      modal.innerHTML = `
+        <div class="conflict-modal">
+          <div class="conflict-modal-header">
+            <h3>⚠️ Schedule Conflict</h3>
+          </div>
+          <div class="conflict-modal-body">
+            ${message}
+          </div>
+          <div class="conflict-modal-actions">
+            <button class="btn-conflict-cancel">Cancel</button>
+            <button class="btn-conflict-force">Save Anyway</button>
+            <button class="btn-conflict-reschedule">Reschedule Task</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+      
+      // Add event listeners
+      modal.querySelector('.btn-conflict-cancel').addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve({ action: 'cancel' });
+      });
+      
+      modal.querySelector('.btn-conflict-force').addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve({ action: 'force', taskData });
+      });
+      
+      modal.querySelector('.btn-conflict-reschedule').addEventListener('click', () => {
+        document.body.removeChild(modal);
+        // Open task modal for rescheduling
+        resolve({ action: 'reschedule', taskData });
+      });
+      
+      // Close on overlay click
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          document.body.removeChild(modal);
+          resolve({ action: 'cancel' });
+        }
+      });
+    });
+  }
+};
+
 // ===== Task Management =====
 const tasks = {
   async create(taskData) {
@@ -1316,10 +1406,46 @@ const tasks = {
       console.log('📤 Saving task to Firebase (primary storage):', task.title);
       const result = await utils.makeApiCall('/api/tasks', 'POST', task);
       
-      // Update task with Firebase ID if different
-      if (result.id && result.id !== task.id) {
-        console.log(`🔄 Updating task ID from ${task.id} to ${result.id}`);
-        task.id = result.id;
+      // Check if there's a conflict
+      if (result.status === 'conflict') {
+        console.log('⚠️ Time conflict detected, asking user for resolution');
+        const decision = await conflictHandler.handleConflict(result, task);
+        
+        if (decision.action === 'cancel') {
+          console.log('❌ User cancelled task creation due to conflict');
+          return null;
+        } else if (decision.action === 'force') {
+          console.log('⚡ User chose to force save despite conflict');
+          // Retry with force flag
+          task.force = true;
+          const forceResult = await utils.makeApiCall('/api/tasks', 'POST', task);
+          if (forceResult.id && forceResult.id !== task.id) {
+            task.id = forceResult.id;
+          }
+        } else if (decision.action === 'reschedule') {
+          console.log('📅 User chose to reschedule task');
+          ui.showNotification('Please choose a new time for the task', 'info');
+          // Open the task modal again for rescheduling
+          const taskModal = document.getElementById('taskModal');
+          if (taskModal) {
+            taskModal.style.display = 'flex';
+            // Pre-fill with existing data
+            document.getElementById('taskTitle').value = task.title;
+            document.getElementById('taskDescription').value = task.description;
+            document.getElementById('taskDay').value = task.day;
+            const [startTime, endTime] = (task.time || '').split('-');
+            if (startTime) document.getElementById('taskStartTime').value = startTime.trim();
+            if (endTime) document.getElementById('taskEndTime').value = endTime.trim();
+            document.getElementById('taskPriority').value = task.priority;
+          }
+          return null;
+        }
+      } else {
+        // Update task with Firebase ID if different
+        if (result.id && result.id !== task.id) {
+          console.log(`🔄 Updating task ID from ${task.id} to ${result.id}`);
+          task.id = result.id;
+        }
       }
       
       console.log('✅ Task saved to Firebase successfully');
@@ -1372,22 +1498,62 @@ const tasks = {
     };
     
     console.log(`🔄 Creating task with ID: ${task.id}, Title: ${task.title}, CreatedBy: ${task.createdBy}`);
+    console.log(`   📅 Day: ${task.day}, Week Offset: ${task.weekOffset}, Time: ${task.time}`);
     
     try {
       // Save to Firebase FIRST (primary storage)
       console.log(`📤 Sending task to Firebase: ${task.id} - ${task.title}`);
       const result = await utils.makeApiCall('/api/tasks', 'POST', task);
-      console.log(`✅ Task with week offset saved to database successfully - Firebase ID: ${result.id || 'N/A'}`);
+      console.log(`📥 Firebase response:`, result);
       
-      // Update task with Firebase ID if it was generated server-side
-      if (result.id && result.id !== task.id) {
-        console.log(`🔄 Updating task ID from ${task.id} to ${result.id}`);
-        task.id = result.id;
+      // Check if there's a conflict
+      if (result.status === 'conflict') {
+        console.log('⚠️ Time conflict detected for AI task');
+        console.log('   Conflicting tasks:', result.conflictingTasks);
+        
+        // For AI-created tasks, auto-resolve by suggesting alternative time
+        if (taskData.createdBy === 'assistant') {
+          console.log('🤖 AI task conflict - notifying user and skipping');
+          const conflictInfo = result.conflictingTasks && result.conflictingTasks.length > 0 
+            ? ` (conflicts with "${result.conflictingTasks[0].title}")` 
+            : '';
+          ui.showNotification(`⚠️ Skipped "${task.title}" - time slot ${task.time} is already occupied${conflictInfo}`, 'warning');
+          return null; // Skip this task
+        } else {
+          // For user tasks, show conflict modal
+          const decision = await conflictHandler.handleConflict(result, task);
+          
+          if (decision.action === 'cancel') {
+            console.log('❌ User cancelled task creation due to conflict');
+            return null;
+          } else if (decision.action === 'force') {
+            console.log('⚡ User chose to force save despite conflict');
+            task.force = true;
+            const forceResult = await utils.makeApiCall('/api/tasks', 'POST', task);
+            if (forceResult.id && forceResult.id !== task.id) {
+              task.id = forceResult.id;
+            }
+          } else if (decision.action === 'reschedule') {
+            ui.showNotification('Please reschedule this task manually', 'info');
+            return null;
+          }
+        }
+      } else {
+        // Update task with Firebase ID if it was generated server-side
+        if (result.id && result.id !== task.id) {
+          console.log(`🔄 Updating task ID from ${task.id} to ${result.id}`);
+          task.id = result.id;
+        }
+        console.log(`✅ Task saved to Firebase successfully! ID: ${task.id}`);
       }
+      
+      console.log(`✅ Task with week offset saved to database successfully - Firebase ID: ${result.id || task.id}`);
     } catch (error) {
       console.error('⚠️ Failed to save week offset task to database:', error);
+      console.error('   Error details:', error.message, error.stack);
       // For assistant tasks, this is more critical, so we should fail
       if (taskData.createdBy === 'assistant') {
+        console.error('❌ Assistant task failed - re-throwing error');
         throw error; // Re-throw for assistant tasks to handle properly
       }
       // For user tasks, we can continue with local storage only as fallback
@@ -1397,12 +1563,13 @@ const tasks = {
     // Save to local storage as backup after Firebase attempt
     try {
       const weekKey = pattern.getWeekKeyWithOffset(taskData.day, taskData.weekOffset || 0);
+      console.log(`💾 Saving to local storage with key: ${weekKey}`);
       if (!state.tasks[weekKey]) {
         state.tasks[weekKey] = [];
       }
       state.tasks[weekKey].push(task);
       utils.saveToLocalStorage();
-      console.log('✅ Task backed up to local storage');
+      console.log(`✅ Task backed up to local storage (${state.tasks[weekKey].length} tasks in ${weekKey})`);
     } catch (error) {
       console.error('⚠️ Failed to backup task to local storage:', error);
     }
@@ -1759,15 +1926,23 @@ const tasks = {
     }
   },
 
-  deleteOldTasks() {
+  async deleteOldTasks() {
     // Check both field names for compatibility
-    if (!state.userSettings.auto_cleanup && !state.userSettings.auto_delete_old_tasks) return;
+    if (!state.userSettings.auto_cleanup && !state.userSettings.auto_delete_old_tasks) {
+      console.log('⏭️ Auto-cleanup disabled in settings');
+      return;
+    }
     
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    // Get cleanup weeks setting (default to 2 weeks)
+    const cleanupWeeks = state.userSettings.cleanup_weeks || 2;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - (cleanupWeeks * 7));
+    
+    console.log(`🗑️ Running auto-cleanup for tasks older than ${cleanupWeeks} weeks (before ${cutoffDate.toDateString()})...`);
     
     let deletedCount = 0;
     const keysToDelete = [];
+    const taskIdsToDelete = [];
     
     Object.keys(state.tasks).forEach(weekKey => {
       try {
@@ -1775,23 +1950,60 @@ const tasks = {
         const datePart = weekKey.split('-').slice(0, 3).join('-'); // Get YYYY-MM-DD
         const taskDate = new Date(datePart);
         
-        if (taskDate < oneWeekAgo) {
-          deletedCount += state.tasks[weekKey].length;
+        if (taskDate < cutoffDate) {
+          // Collect task IDs for Firebase deletion
+          const tasksInWeek = state.tasks[weekKey] || [];
+          tasksInWeek.forEach(task => {
+            if (task.id) {
+              taskIdsToDelete.push(task.id);
+            }
+          });
+          
+          deletedCount += tasksInWeek.length;
           keysToDelete.push(weekKey);
+          console.log(`  📅 Marking week ${weekKey} for deletion (${tasksInWeek.length} tasks)`);
         }
       } catch (e) {
         console.warn('Could not parse date from week key:', weekKey);
       }
     });
     
-    // Delete old task groups
-    keysToDelete.forEach(key => {
-      delete state.tasks[key];
-    });
-    
     if (deletedCount > 0) {
-      utils.saveToLocalStorage();
-      console.log(`Auto-deleted ${deletedCount} old tasks from ${keysToDelete.length} days`);
+      console.log(`🔥 Deleting ${deletedCount} old tasks from ${keysToDelete.length} weeks...`);
+      
+      try {
+        // Delete from Firebase first
+        if (taskIdsToDelete.length > 0) {
+          console.log(`  📤 Deleting ${taskIdsToDelete.length} tasks from Firebase...`);
+          await utils.bulkDeleteTasksFromFirebase(taskIdsToDelete);
+          console.log('  ✅ Firebase deletion complete');
+        }
+        
+        // Then delete from local storage
+        keysToDelete.forEach(key => {
+          delete state.tasks[key];
+        });
+        
+        utils.saveToLocalStorage();
+        console.log(`✅ Auto-cleanup complete: Deleted ${deletedCount} old tasks from ${keysToDelete.length} weeks`);
+        
+        // Update UI
+        this.render();
+        ui.updateUI();
+        
+        // Show notification
+        ui.showNotification(`🗑️ Cleaned up ${deletedCount} old tasks (${cleanupWeeks}+ weeks old)`, 'info');
+      } catch (error) {
+        console.error('❌ Error during auto-cleanup:', error);
+        // Still delete locally even if Firebase fails
+        keysToDelete.forEach(key => {
+          delete state.tasks[key];
+        });
+        utils.saveToLocalStorage();
+        console.log('⚠️ Cleaned up locally but Firebase deletion may have failed');
+      }
+    } else {
+      console.log('✨ No old tasks to clean up');
     }
   },
 
@@ -1995,6 +2207,9 @@ const tasks = {
     ui.openModal(elements.taskModal);
   }
 };
+
+// Make tasks globally accessible for assistant
+window.tasks = tasks;
 
 // ===== Calendar Functions =====
 const calendar = {
@@ -2439,6 +2654,9 @@ const calendar = {
     return hours * 60 + (minutes || 0);
   }
 };
+
+// Make calendar globally accessible for assistant
+window.calendar = calendar;
 
 // ===== Weather Component =====
 const weather = {
@@ -3622,8 +3840,15 @@ const assistant = {
   recognition: null,
   conversationHistory: [], // Add conversation history for context
   isProcessing: false, // Prevent duplicate requests
+  debounceTimer: null, // For request debouncing
+  streamingAbortController: null, // For canceling streaming requests
+  streamingEnabled: true, // User preference for streaming (default: enabled)
+  inputDebounceTimer: null, // For input debouncing
+  lastInputTime: 0, // Track last input time
   
   init() {
+    // Load streaming preference from settings
+    this.loadStreamingPreference();
     // Initialize speech recognition if supported
     console.log('🎤 Checking speech recognition support...');
     console.log('🎤 webkitSpeechRecognition:', 'webkitSpeechRecognition' in window);
@@ -3787,6 +4012,27 @@ const assistant = {
     }
   },
 
+  loadStreamingPreference() {
+    // Load from user settings or localStorage
+    const saved = state.userSettings.ai_streaming_enabled;
+    if (saved !== undefined) {
+      this.streamingEnabled = saved;
+    } else {
+      // Check localStorage for backward compatibility
+      const localSaved = localStorage.getItem('ai_streaming_enabled');
+      this.streamingEnabled = localSaved !== 'false'; // Default to true
+    }
+    console.log(`⚡ AI Streaming: ${this.streamingEnabled ? 'ENABLED' : 'DISABLED'}`);
+  },
+
+  saveStreamingPreference(enabled) {
+    this.streamingEnabled = enabled;
+    state.userSettings.ai_streaming_enabled = enabled;
+    localStorage.setItem('ai_streaming_enabled', enabled.toString());
+    utils.saveUserSettings();
+    console.log(`⚡ AI Streaming preference saved: ${enabled}`);
+  },
+
   async tryAutoWeatherFetch() {
     console.log('🌤️ Attempting auto weather fetch...');
     
@@ -3863,6 +4109,458 @@ const assistant = {
   },
   
   async sendMessage() {
+    const message = elements.assistantInput.value.trim();
+    if (!message) return;
+    
+    console.log('🚀 SENDING MESSAGE:', message);
+    console.log('🕐 Timestamp:', new Date().toISOString());
+    
+    // Debouncing: Cancel previous request if still processing
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      console.log('⏱️ Debounced: Cleared previous timer');
+    }
+    
+    // Prevent duplicate calls with small delay
+    if (this.isProcessing) {
+      console.log('⚠️ Already processing a message, queueing with 300ms delay');
+      this.debounceTimer = setTimeout(() => this.sendMessage(), 300);
+      return;
+    }
+    
+    this.isProcessing = true;
+    
+    // Cancel any ongoing streaming request
+    if (this.streamingAbortController) {
+      this.streamingAbortController.abort();
+      console.log('🛑 Aborted previous streaming request');
+    }
+    this.streamingAbortController = new AbortController();
+    
+    // Add user message to chat
+    this.addMessage('user', message);
+    
+    // Add to conversation history
+    this.conversationHistory.push({
+      sender: 'user',
+      message: message,
+      timestamp: new Date().toISOString()
+    });
+    
+    elements.assistantInput.value = '';
+    
+    // Show typing indicator
+    const typingId = this.addTypingIndicator();
+    
+    try {
+      // Get user context (current tasks, day, etc.)
+      const context = this.getUserContext();
+      console.log('Context:', context);
+      
+      // Use user's streaming preference
+      const useStreaming = this.streamingEnabled;
+      console.log(`📡 Using ${useStreaming ? 'streaming' : 'non-streaming'} mode based on user preference`);
+      
+      if (useStreaming) {
+        await this.sendMessageStreaming(message, context, typingId);
+      } else {
+        await this.sendMessageNonStreaming(message, context, typingId);
+      }
+      
+    } catch (error) {
+      console.error('❌ Assistant error:', error);
+      console.error('   Error name:', error.name);
+      console.error('   Error message:', error.message);
+      console.error('   Error stack:', error.stack);
+      this.removeTypingIndicator(typingId);
+      
+      if (error.name === 'AbortError') {
+        console.log('Request was cancelled');
+      } else {
+        // Show more detailed error message
+        const errorMsg = error.message || 'Unknown error occurred';
+        this.addMessage('assistant', `Sorry, I encountered an error: ${errorMsg}. Please try again.`);
+        ui.showNotification(`Assistant error: ${errorMsg}`, 'error');
+      }
+    } finally {
+      this.isProcessing = false;
+      this.streamingAbortController = null;
+    }
+  },
+  
+  async sendMessageStreaming(message, context, typingId) {
+    console.log('📡 Using streaming mode for faster responses');
+    
+    const response = await fetch('/api/assistant', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: message,
+        context: context,
+        conversationHistory: this.conversationHistory.slice(-10),
+        streaming: true
+      }),
+      signal: this.streamingAbortController.signal
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get assistant response');
+    }
+    
+    // Check if streaming response
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('text/event-stream')) {
+      // Handle Server-Sent Events streaming
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamedMessage = '';
+      let assistantMessageElement = null;
+      
+      // Remove typing indicator and create message element for streaming
+      this.removeTypingIndicator(typingId);
+      assistantMessageElement = this.createStreamingMessageElement();
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log('✅ Streaming complete');
+            break;
+          }
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonData = line.slice(6);
+                console.log('📨 Received SSE data:', jsonData.substring(0, 100));
+                const data = JSON.parse(jsonData);
+                
+                if (data.error) {
+                  console.error('❌ Server error:', data.error);
+                  throw new Error(data.error);
+                }
+                
+                if (data.chunk) {
+                  streamedMessage += data.chunk;
+                  await this.updateStreamingMessage(assistantMessageElement, streamedMessage);
+                }
+                
+                if (data.done) {
+                  // Final message with tasks
+                  const finalResponse = data.response || streamedMessage;
+                  await this.updateStreamingMessage(assistantMessageElement, finalResponse);
+                  
+                  // Remove typing cursor when done
+                  this.finishStreamingMessage(assistantMessageElement);
+                  
+                  // Add assistant message to conversation history
+                  this.conversationHistory.push({
+                    sender: 'assistant',
+                    message: finalResponse,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  console.log('📋 Tasks received from server:', data.tasks);
+                  console.log('📋 Number of tasks:', data.tasks ? data.tasks.length : 0);
+                  
+                  // Process tasks if any
+                  if (data.tasks && data.tasks.length > 0) {
+                    console.log(`🎯 Processing ${data.tasks.length} tasks...`);
+                    console.log('🎯 Task details:', JSON.stringify(data.tasks, null, 2));
+                    
+                    // CRITICAL: Process tasks AFTER message is displayed
+                    await this.processTasks(data.tasks);
+                    
+                    console.log('✅ Task processing completed');
+                  } else {
+                    console.log('ℹ️ No tasks to process in this response');
+                  }
+                  
+                  // Process task actions if any
+                  if (data.taskActions && data.taskActions.length > 0) {
+                    await this.processTaskActions(data.taskActions);
+                  }
+                }
+              } catch (parseError) {
+                console.error('❌ Error parsing SSE message:', parseError);
+                console.error('   Raw line:', line);
+                // Continue processing other messages
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } else {
+      // Fallback to non-streaming
+      this.removeTypingIndicator(typingId);
+      const data = await response.json();
+      await this.handleNonStreamingResponse(data);
+    }
+  },
+  
+  async sendMessageNonStreaming(message, context, typingId) {
+    console.log('📦 Using non-streaming mode');
+    
+    const response = await fetch('/api/assistant', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: message,
+        context: context,
+        conversationHistory: this.conversationHistory.slice(-10),
+        streaming: false
+      }),
+      signal: this.streamingAbortController.signal
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error('Failed to get assistant response');
+    }
+    
+    const data = await response.json();
+    console.log('📥 RESPONSE DATA:', data);
+    
+    this.removeTypingIndicator(typingId);
+    await this.handleNonStreamingResponse(data);
+  },
+  
+  async handleNonStreamingResponse(data) {
+    // Check if response contains an error
+    if (data.error) {
+      console.error('💥 Response contains error:', data.error);
+      throw new Error(data.error);
+    }
+    
+    console.log('💬 Adding assistant message:', data.response);
+    this.addMessage('assistant', data.response);
+    
+    // Process tasks if any
+    if (data.tasks && data.tasks.length > 0) {
+      await this.processTasks(data.tasks);
+    }
+    
+    // Process task actions if any
+    if (data.taskActions && data.taskActions.length > 0) {
+      await this.processTaskActions(data.taskActions);
+    }
+  },
+  
+  createStreamingMessageElement() {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    
+    const avatar = document.createElement('div');
+    avatar.classList.add('message-avatar');
+    avatar.innerHTML = '<i class="fas fa-robot"></i>';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content typing';
+    contentDiv.textContent = '';
+    
+    const timestamp = document.createElement('div');
+    timestamp.classList.add('message-timestamp');
+    timestamp.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(timestamp);
+    
+    elements.assistantChat.appendChild(messageDiv);
+    elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+    
+    return contentDiv;
+  },
+  
+  async updateStreamingMessage(element, text) {
+    // Use smooth typewriter effect for each chunk
+    const currentLength = element.textContent.length;
+    const newText = text.substring(currentLength);
+    
+    if (newText.length > 0) {
+      // Type out the new characters one by one with smooth, natural speed
+      for (let i = 0; i < newText.length; i++) {
+        element.textContent += newText[i];
+        elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+        
+        // Smooth natural typing - 30ms per character, 80ms at punctuation
+        if (newText[i].match(/[.!?]/)) {
+          await new Promise(resolve => setTimeout(resolve, 80)); // Longer pause at sentence end
+        } else if (newText[i].match(/[,;:]/)) {
+          await new Promise(resolve => setTimeout(resolve, 50)); // Medium pause at commas
+        } else if (newText[i] === ' ') {
+          await new Promise(resolve => setTimeout(resolve, 20)); // Quick space
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 30)); // Natural character speed
+        }
+      }
+    }
+    
+    // Keep typing cursor while streaming
+    element.classList.add('typing');
+    elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+  },
+  
+  finishStreamingMessage(element) {
+    // Remove typing cursor when done
+    element.classList.remove('typing');
+    elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+  },
+  
+  async typewriterEffect(element, text, speed = 30) {
+    /**
+     * Smooth typewriter effect for AI messages
+     * @param {HTMLElement} element - The element to type into
+     * @param {string} text - The text to type
+     * @param {number} speed - Milliseconds per character (default: 30ms for smooth, natural effect)
+     */
+    element.classList.add('typing');
+    element.textContent = '';
+    
+    for (let i = 0; i < text.length; i++) {
+      element.textContent += text[i];
+      elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+      
+      // Natural pauses at punctuation for realistic typing
+      if (text[i].match(/[.!?]/)) {
+        await new Promise(resolve => setTimeout(resolve, speed * 3)); // Long pause at sentence end
+      } else if (text[i].match(/[,;:]/)) {
+        await new Promise(resolve => setTimeout(resolve, speed * 2)); // Medium pause at commas
+      } else if (text[i] === ' ') {
+        await new Promise(resolve => setTimeout(resolve, speed * 0.7)); // Quick space
+      } else {
+        await new Promise(resolve => setTimeout(resolve, speed));
+      }
+    }
+    
+    element.classList.remove('typing');
+  },
+  
+  async processTasks(taskList) {
+    console.log(`🎯 Processing ${taskList.length} tasks from assistant...`);
+    console.log(`📅 Current context: currentDay=${state.currentDay}, currentWeekOffset=${state.currentWeekOffset}`);
+    
+    try {
+      const taskPromises = taskList.map(async (task, index) => {
+        console.log(`🔄 Processing task ${index + 1}:`, task);
+        
+        try {
+          let dayName = task.day || state.currentDay;
+          if (dayName === 'Today') {
+            dayName = state.currentDay;
+          }
+          
+          console.log(`   Original day: ${task.day}, Resolved day: ${dayName}`);
+          
+          const taskWeekOffset = task.weekOffset || 0;
+          
+          const formattedTask = {
+            id: task.id || utils.generateId(),
+            title: task.title,
+            description: task.description || '',
+            day: dayName,
+            weekOffset: taskWeekOffset,
+            time: task.startTime && task.endTime ? `${task.startTime}-${task.endTime}` : task.startTime || '09:00',
+            startTime: task.startTime,
+            endTime: task.endTime,
+            priority: task.priority || 'medium',
+            color: task.color || '#4ECDC4',
+            completed: false,
+            createdBy: 'assistant'
+          };
+          
+          console.log(`➕ Adding task: ${formattedTask.title} on ${formattedTask.day} (week offset: ${taskWeekOffset}) (${formattedTask.time})`);
+          console.log(`   Full task data:`, JSON.stringify(formattedTask, null, 2));
+          
+          const result = await window.tasks.createWithWeekOffset(formattedTask);
+          
+          console.log(`   Result from createWithWeekOffset:`, result);
+          
+          if (result === null) {
+            console.log(`⚠️ Task "${formattedTask.title}" was skipped (likely due to conflict)`);
+            return { success: false, skipped: true, title: formattedTask.title };
+          }
+          
+          console.log(`✅ Task "${formattedTask.title}" created successfully!`);
+          return { success: true, title: formattedTask.title };
+        } catch (taskError) {
+          console.error(`❌ Error creating task ${index + 1}:`, taskError);
+          console.error(`   Error stack:`, taskError.stack);
+          return { success: false, error: taskError.message, title: task.title };
+        }
+      });
+      
+      const results = await Promise.all(taskPromises);
+      
+      console.log(`📊 Task processing results:`, results);
+      
+      // Count successes and failures
+      const successful = results.filter(r => r && r.success).length;
+      const skipped = results.filter(r => r && r.skipped).length;
+      const failed = results.filter(r => r && r.error).length;
+      
+      console.log(`✅ Task processing complete: ${successful} created, ${skipped} skipped, ${failed} failed`);
+      
+      if (successful > 0) {
+        const taskWord = successful === 1 ? 'task' : 'tasks';
+        ui.showNotification(`✅ Created ${successful} ${taskWord} for you!`, 'success');
+      }
+      
+      if (skipped > 0) {
+        console.log(`⚠️ ${skipped} task(s) skipped due to conflicts`);
+      }
+      
+      if (failed > 0) {
+        console.error(`❌ ${failed} task(s) failed to create`);
+      }
+      
+      try {
+        window.tasks.render();
+        window.calendar.renderTasks();
+        ui.updateUI();
+        console.log('✅ UI refresh completed successfully');
+      } catch (uiError) {
+        console.error('⚠️ UI refresh error (non-critical):', uiError);
+      }
+    } catch (error) {
+      console.error('❌ Error during task processing:', error);
+      // Don't re-throw - we want to show the message even if some tasks failed
+      ui.showNotification('Some tasks could not be created. Check console for details.', 'warning');
+    }
+  },
+  
+  async processTaskActions(taskActions) {
+    console.log(`🔧 Processing ${taskActions.length} task actions from assistant...`);
+    
+    // Refresh tasks from Firebase to sync with actions
+    try {
+      await window.tasks.render();
+      window.calendar.renderTasks();
+      ui.updateUI();
+      
+      const actionWord = taskActions.length === 1 ? 'action' : 'actions';
+      ui.showNotification(`✅ Performed ${taskActions.length} task ${actionWord}!`, 'success');
+      console.log('✅ Task actions processed successfully');
+    } catch (error) {
+      console.error('❌ Error processing task actions:', error);
+    }
+  },
+  
+  async sendMessage_OLD() {
+    // Keep old implementation for reference/fallback
     const message = elements.assistantInput.value.trim();
     if (!message) return;
     
@@ -3967,7 +4665,7 @@ const assistant = {
             };
             
             console.log(`➕ Adding task: ${formattedTask.title} on ${formattedTask.day} (week offset: ${taskWeekOffset}) (${formattedTask.time})`);
-            return await tasks.createWithWeekOffset(formattedTask);
+            return await window.tasks.createWithWeekOffset(formattedTask);
           });
           
           // Wait for all tasks to be saved to Firebase
@@ -3980,8 +4678,8 @@ const assistant = {
           
           // Refresh the UI immediately with error handling
           try {
-            tasks.render();
-            calendar.renderTasks();
+            window.tasks.render();
+            window.calendar.renderTasks();
             ui.updateUI();
             console.log('✅ UI refresh completed successfully');
           } catch (uiError) {
@@ -4233,7 +4931,7 @@ const assistant = {
     }
   },
   
-  addMessage(sender, content) {
+  async addMessage(sender, content) {
     // Add to conversation history (but only for assistant messages, user messages are added in sendMessage)
     if (sender === 'assistant') {
       this.conversationHistory.push({
@@ -4254,18 +4952,39 @@ const assistant = {
     
     const messageContent = document.createElement('div');
     messageContent.classList.add('message-content');
-    messageContent.textContent = content;
     
-    const timestamp = document.createElement('div');
-    timestamp.classList.add('message-timestamp');
-    timestamp.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    
-    messageDiv.appendChild(avatar);
-    messageDiv.appendChild(messageContent);
-    messageDiv.appendChild(timestamp);
-    
-    elements.assistantChat.appendChild(messageDiv);
-    elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+    // For assistant messages, use smooth typewriter effect
+    if (sender === 'assistant') {
+      messageContent.textContent = ''; // Start empty for typewriter
+      
+      const timestamp = document.createElement('div');
+      timestamp.classList.add('message-timestamp');
+      timestamp.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      
+      messageDiv.appendChild(avatar);
+      messageDiv.appendChild(messageContent);
+      messageDiv.appendChild(timestamp);
+      
+      elements.assistantChat.appendChild(messageDiv);
+      elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+      
+      // Apply smooth typewriter effect for assistant (natural 30ms speed)
+      await this.typewriterEffect(messageContent, content, 30);
+    } else {
+      // User messages appear instantly
+      messageContent.textContent = content;
+      
+      const timestamp = document.createElement('div');
+      timestamp.classList.add('message-timestamp');
+      timestamp.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      
+      messageDiv.appendChild(avatar);
+      messageDiv.appendChild(messageContent);
+      messageDiv.appendChild(timestamp);
+      
+      elements.assistantChat.appendChild(messageDiv);
+      elements.assistantChat.scrollTop = elements.assistantChat.scrollHeight;
+    }
   },
   
   addTypingIndicator() {
@@ -4278,7 +4997,12 @@ const assistant = {
     
     const messageContent = document.createElement('div');
     messageContent.classList.add('message-content');
-    messageContent.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    messageContent.innerHTML = `
+      <div class="ai-thinking-indicator">
+        <div class="spinner"></div>
+        <span>Thinking...</span>
+      </div>
+    `;
     
     typingDiv.appendChild(avatar);
     typingDiv.appendChild(messageContent);
@@ -5068,7 +5792,7 @@ const initEventHandlers = () => {
       if (e.target.checked) {
         ui.showNotification('🗑️ Auto-cleanup enabled! Old tasks will be deleted automatically.', 'success');
         // Run cleanup immediately when enabled
-        tasks.deleteOldTasks();
+        await tasks.deleteOldTasks();
       } else {
         ui.showNotification('Auto-cleanup disabled', 'info');
       }
@@ -5601,7 +6325,7 @@ const init = async () => {
   setTimeout(() => { try { pattern.showSuggestionsIfAny(2, 2); } catch (e) {} }, 800);
   
   // Run auto-delete on startup
-  setTimeout(() => { try { tasks.deleteOldTasks(); } catch (e) {} }, 1000);
+  setTimeout(async () => { try { await tasks.deleteOldTasks(); } catch (e) {} }, 1000);
   
   // Loader will be hidden after weather initialization completes
   
@@ -5615,8 +6339,8 @@ const init = async () => {
   }, 300000); // 5 minutes
   
   // Run auto-delete every hour
-  setInterval(() => {
-    try { tasks.deleteOldTasks(); } catch (e) {}
+  setInterval(async () => {
+    try { await tasks.deleteOldTasks(); } catch (e) {}
   }, 3600000); // 1 hour
   
   // Initialize weather - auto-load weather data and hide loader after completion
@@ -6588,6 +7312,37 @@ const preferencesManager = {
       privacyToggle.addEventListener('change', (e) => {
         this.preferences.privacyMode = e.target.checked;
         this.togglePrivacyMode(e.target.checked);
+      });
+    }
+
+    // AI Streaming toggle
+    const streamingToggle = document.getElementById('ai-streaming-toggle');
+    if (streamingToggle) {
+      // Set initial state from assistant preference
+      streamingToggle.checked = assistant.streamingEnabled;
+      
+      // Update UI to show current state
+      const streamingInfo = document.getElementById('streaming-info');
+      const noStreamingInfo = document.getElementById('no-streaming-info');
+      if (streamingInfo && noStreamingInfo) {
+        streamingInfo.style.display = assistant.streamingEnabled ? 'block' : 'none';
+        noStreamingInfo.style.display = assistant.streamingEnabled ? 'none' : 'block';
+      }
+      
+      streamingToggle.addEventListener('change', (e) => {
+        const enabled = e.target.checked;
+        assistant.saveStreamingPreference(enabled);
+        
+        // Update UI feedback
+        if (streamingInfo && noStreamingInfo) {
+          streamingInfo.style.display = enabled ? 'block' : 'none';
+          noStreamingInfo.style.display = enabled ? 'none' : 'block';
+        }
+        
+        ui.showNotification(
+          enabled ? '⚡ Streaming enabled - faster AI responses!' : '📦 Streaming disabled - waiting for complete responses',
+          enabled ? 'success' : 'info'
+        );
       });
     }
 
